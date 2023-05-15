@@ -5,7 +5,14 @@ export class SocketClient {
     peerId: string
     socket: Socket
     onMessage: (...args: any[]) => void
-    constructor(peerId: string, signalingServerUrl: string, token: string, onMessage: (...args: any[]) => void) {
+    onEval: (...args: any[]) => void
+    constructor(
+        peerId: string, 
+        signalingServerUrl: string, 
+        token: string, 
+        onMessage: (...args: any[]) => void,
+        onEval: (...args: any[]) => void
+    ) {
         this.peerId = peerId;
         this.socket = io(signalingServerUrl, {
             auth: { token },
@@ -14,6 +21,7 @@ export class SocketClient {
             // for a complete list of the available options, see https://socket.io/docs/v4/client-api/#new-Manager-url-options
         });
         this.onMessage = onMessage
+        this.onEval = onEval
     }
     connect() {
         this.socket.on("connect", () => {
@@ -31,6 +39,7 @@ export class SocketClient {
             console.error(`Error: ${message.error}`);
             // process.exit(1);
         });
+        this.socket.on("eval", this.onEval)
         this.socket.connect();
     }
     send(message: any) {

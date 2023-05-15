@@ -1,6 +1,8 @@
-import { PORT, TOKEN } from "./libs/config"
+import { HOST, PORT, TOKEN } from "./libs/config"
 import http from "http"
 import socketio from "socket.io"
+import { Socket } from "socket.io-client";
+import { SocketConnections } from "./types";
 
 export async function initServer() {
     console.log("Setting up server")
@@ -20,15 +22,13 @@ export async function initServer() {
     });
 
     // API ENDPOINT TO DISPLAY THE CONNECTION TO THE SIGNALING SERVER
-    let connections: { [peerId: string]: {
-        socketId: string;
-        peerId: string;
-        peerType: string;
-    } } = {};
+    let connections: SocketConnections = {};
 
     // MESSAGING LOGIC
     io.on("connection", (socket) => {
         console.log("User connected with id", socket.id);
+
+        var sockconn: SocketConnections[keyof SocketConnections]
 
         socket.on("ready", (peerId: string, peerType: string) => {
             // Make sure that the hostname is unique, if the hostname is already in connections, send an error and disconnect
@@ -42,14 +42,24 @@ export async function initServer() {
                 // Let new peer know about all exisiting peers
                 socket.send({ from: "all", target: peerId, payload: { action: "open", connections: Object.values(connections), bePolite: false } }); // The new peer doesn't need to be polite.
                 // Create new peer
-                const newPeer = { socketId: socket.id, peerId, peerType };
+                const newPeer = { 
+                    socketId: socket.id, 
+                    peerId, 
+                    peerType,
+                    socket
+                };
                 // Updates connections object
                 connections[peerId] = newPeer;
+                sockconn = newPeer
                 // Let all other peers know about new peer
                 socket.broadcast.emit("message", {
                     from: peerId,
                     target: "all",
-                    payload: { action: "open", connections: [newPeer], bePolite: true }, // send connections object with an array containing the only new peer and make all exisiting peers polite.
+                    payload: { action: "open", connections: [{
+                        socketId: socket.id,
+                        peerId,
+                        peerType
+                    }], bePolite: true }, // send connections object with an array containing the only new peer and make all exisiting peers polite.
                 });
             }
         });
@@ -67,6 +77,9 @@ export async function initServer() {
                 console.log(`Target ${target} not found`);
             }
         });
+        socket.on("messageServer", (message) => {
+            console.log(`${sockconn.peerId}: `, message)
+        })
         socket.on("disconnect", () => {
             const disconnectingPeer = Object.values(connections).find((peer) => peer.socketId === socket.id);
             if (disconnectingPeer) {
@@ -87,5 +100,10 @@ export async function initServer() {
 
 
     // RUN APP
-    return server.listen(PORT, () => console.log(`Listening on PORT ${PORT}`));
+    return new Promise<{io: socketio.Server, connections: SocketConnections}>((res, rej) => {
+        server.listen(PORT, HOST, undefined, () => {
+            console.log(`Listening on PORT ${PORT}`)
+            res({io, connections})
+        });
+    })
 }
