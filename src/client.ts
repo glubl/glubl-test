@@ -9,8 +9,14 @@ var driver: ThenableWebDriver
 export async function initClient() {
     require('chromedriver');
     var webdriver = require('selenium-webdriver');
+    const chrome = require('selenium-webdriver/chrome');
+    const screen = {
+        width: 640,
+        height: 480
+      };
     driver = (new webdriver.Builder() as Builder)
         .forBrowser('chrome')
+        .setChromeOptions(new chrome.Options().headless().windowSize(screen))
         .build();
 
     console.log(`Setting up client`)
