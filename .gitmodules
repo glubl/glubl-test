@@ -1,0 +1,3 @@
+[submodule "public/gun"]
+	path = public/gun
+	url = https://github.com/amark/gun

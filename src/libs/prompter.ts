@@ -39,7 +39,8 @@ export function prompt(io: socketio.Server, connections: SocketConnections) {
                 io.emit('eval', cmds.slice(1).join(' '))
                 break
             case 'evalto': 
-                if (!connections[cmds[1]]) {
+                let con: SocketConnections[keyof SocketConnections]
+                if (!(con = connections[cmds[1]])) {
                     console.log(`Client ID "${cmds[1]}" doesn't exists or disconnected`)
                     break
                 }
@@ -47,7 +48,7 @@ export function prompt(io: socketio.Server, connections: SocketConnections) {
                     console.log(`Script must be specified`)
                     break
                 }
-                io.emit('eval', cmds.slice(2).join(' '))
+                io.to(con.socketId).emit('eval', cmds.slice(2).join(' '))
                 break
             default:
                 console.log("Say what? I don't understand that");

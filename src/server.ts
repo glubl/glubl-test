@@ -45,8 +45,7 @@ export async function initServer() {
                 const newPeer = { 
                     socketId: socket.id, 
                     peerId, 
-                    peerType,
-                    socket
+                    peerType
                 };
                 // Updates connections object
                 connections[peerId] = newPeer;
