@@ -1,6 +1,11 @@
 import * as readline from 'readline';
 import socketio from 'socket.io';
 import { SocketConnections } from '../types';
+import { ISEA } from 'gun/types/sea';
+import { ISEAPair } from 'gun';
+
+var { testLatencyServer } = require("../tests")
+var SEA: ISEA = require("gun/sea")
 
 export function prompt(io: socketio.Server, connections: SocketConnections) {
     let rl = readline.createInterface({
@@ -8,7 +13,7 @@ export function prompt(io: socketio.Server, connections: SocketConnections) {
         output: process.stdout
     });
     rl.setPrompt('> ')
-    rl.on('line', function(line) {
+    rl.on('line', async function(line) {
         let cmds = line.trim().split(' ')
         switch(cmds[0].toLowerCase()) {
             case 'help':
@@ -50,6 +55,20 @@ export function prompt(io: socketio.Server, connections: SocketConnections) {
                 }
                 io.to(con.socketId).emit('eval', cmds.slice(2).join(' '))
                 break
+            case 'evalhere':
+                if (!cmds[1]) {
+                    console.log(`Script must be specified`)
+                    break
+                }
+                try {
+                    console.log(await eval(cmds.slice(1).join(' ')))
+                } catch (error) {
+                    console.log(error)
+                }
+                break
+            case 'testlatency':
+                await testLatencyServer(SEA, io, connections)
+                break
             default:
                 console.log("Say what? I don't understand that");
             break;
@@ -62,3 +81,5 @@ export function prompt(io: socketio.Server, connections: SocketConnections) {
 
     rl.prompt()
 }
+
+

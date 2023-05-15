@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gunjs Template</title>
+    <script src="./gun/gun.js"></script>
+    <script src="./gun/sea.js"></script>
+    <script src="./gun/lib/radix.js"></script>
+    <script src="./gun/lib/radisk.js"></script>
+    <script src="./gun/lib/store.js"></script>
+    <script src="./gun/lib/rindexed.js"></script>
+    <script src="./libs.js"></script>
+</head>
+<body>
+    
+</body>
+<script>
+    async function init(peer, pair, friendPair) {
+        if (
+            typeof pair === "undefined" 
+            || typeof friendPair === "undefined"
+            || typeof peer === "undefined"
+        ) {
+            throw "pair, friendPair, and peer must be defined"
+        }
+        console.log(peer, pair, friendPair)
+        window.peer = peer
+        window.pair = pair
+        window.friendPair = friendPair
+
+        let res = await initGun(peer, pair)
+        gun = res.gun
+        user = res.user
+
+        res = await addFriend(user, pair, friendPair)
+        secret = res.secret
+        friendPath = res.friendPath
+        friendGun = res.friendGun
+        myGun = res.myGun
+        console.log(res)
+    }
+
+    async function start(initiator, firstPath) {
+        console.log("Start test", firstPath)
+        if (initiator) {
+            var t1
+            let nextPath = gun.back("opt.uuid")()
+            let fut = new Promise((res, rej) => {
+                myGun.get(nextPath)
+                    .on(async (v, k, _, e) => {
+                        let t4 = +new Date
+                        console.log(v)
+                        if (!v || !v.ts || !v.d) return
+                        let { msg, by } = await decryptChat(friendPair, secret, v.d)
+                        console.log(msg)
+                        if (!msg) return
+                        let t3 = v.ts
+                        let t2 = msg
+                        res({t1, t2, t3, t4})
+                        e.off()
+                    })
+            })
+            
+            t1 = await sendChat(friendGun.get(firstPath), pair, secret, nextPath)
+            console.log(t1)
+            return fut
+        } else {
+            return new Promise((res, rej) => {
+                myGun.get(firstPath)
+                    .on(async (v, k, _, e) => {
+                        let t2 = +new Date
+                        console.log(v)
+                        if (!v || !v.ts || !v.d) return
+                        let { msg, by } = await decryptChat(friendPair, secret, v.d)
+                        console.log(msg)
+                        if (!msg) return
+                        e.off()
+                        
+                        t3 = await sendChat(friendGun.get(msg), pair, secret, t2)
+                        console.log(t3)
+                        res()
+                    })
+            })
+        }
+    }
+    
+</script>
+</html>

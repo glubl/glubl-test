@@ -40,12 +40,23 @@ export async function initServer() {
             } else {
                 console.log(`Added ${peerId} to connections`);
                 // Let new peer know about all exisiting peers
-                socket.send({ from: "all", target: peerId, payload: { action: "open", connections: Object.values(connections), bePolite: false } }); // The new peer doesn't need to be polite.
+                socket.send(
+                    { 
+                        from: "all", 
+                        target: peerId, 
+                        payload: { 
+                            action: "open", 
+                            connections: Object.values(connections).map(({socketId, peerId, peerType}) => { return {socketId, peerId, peerType}}), 
+                            bePolite: false 
+                        } 
+                    }
+                ); // The new peer doesn't need to be polite.
                 // Create new peer
                 const newPeer = { 
                     socketId: socket.id, 
                     peerId, 
-                    peerType
+                    peerType,
+                    socket
                 };
                 // Updates connections object
                 connections[peerId] = newPeer;

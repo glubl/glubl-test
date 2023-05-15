@@ -5,5 +5,6 @@ export type SocketConnections = {
         socketId: string;
         peerId: string;
         peerType: string;
+        socket: Socket
     } 
 }
