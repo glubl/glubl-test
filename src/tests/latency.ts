@@ -55,7 +55,6 @@ export async function testLatencyServer(SEA: any, io: Server, connections: Socke
 
         if (alternate) {
             ;([pair1, pair2] = [pair2, pair1])
-            ;([conn1, conn2] = [conn2, conn1])
         }
         i--
     }
