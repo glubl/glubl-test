@@ -1,119 +1,107 @@
 import { HOST, PORT, TOKEN } from "./libs/config"
 import http from "http"
-import socketio from "socket.io"
-import { Socket } from "socket.io-client";
 import { SocketConnections } from "./types";
+import { SocketServer } from "./libs/socket";
+import { ISEA } from 'gun/types/sea';
+import readline from "readline"
 
+var { testLatencyServer } = require("./tests")
+var SEA: ISEA
+var server: SocketServer
+var rl: readline.Interface
 export async function initServer() {
     console.log("Setting up server")
+    SEA = require("gun/sea") 
+   
+    const httpServer = http.createServer();
+    server = new SocketServer(httpServer, TOKEN)
+
+    rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+    rl.on('line', onPrompt)
+      .on('close', onClose)
+      .setPrompt('> ')
+
     
-    // SETUP SERVERS
-    const server = http.createServer();
-    const io = new socketio.Server(server, { cors: {} });
-
-    // AUTHENTICATION MIDDLEWARE
-    io.use((socket, next) => {
-        const token = socket.handshake.auth.token; // check the auth token provided by the client upon connection
-        if (token === TOKEN) {
-            next();
-        } else {
-            next(new Error("Authentication error"));
-        }
-    });
-
-    // API ENDPOINT TO DISPLAY THE CONNECTION TO THE SIGNALING SERVER
-    let connections: SocketConnections = {};
-
-    // MESSAGING LOGIC
-    io.on("connection", (socket) => {
-        console.log("User connected with id", socket.id);
-
-        var sockconn: SocketConnections[keyof SocketConnections]
-
-        socket.on("ready", (peerId: string, peerType: string) => {
-            // Make sure that the hostname is unique, if the hostname is already in connections, send an error and disconnect
-            if (peerId in connections) {
-                socket.emit("uniquenessError", {
-                    message: `${peerId} is already connected to the signalling server. Please change your peer ID and try again.`,
-                });
-                socket.disconnect(true);
-            } else {
-                console.log(`Added ${peerId} to connections`);
-                // Let new peer know about all exisiting peers
-                socket.send(
-                    { 
-                        from: "all", 
-                        target: peerId, 
-                        payload: { 
-                            action: "open", 
-                            connections: Object.values(connections).map(({socketId, peerId, peerType}) => { return {socketId, peerId, peerType}}), 
-                            bePolite: false 
-                        } 
-                    }
-                ); // The new peer doesn't need to be polite.
-                // Create new peer
-                const newPeer = { 
-                    socketId: socket.id, 
-                    peerId, 
-                    peerType,
-                    socket
-                };
-                // Updates connections object
-                connections[peerId] = newPeer;
-                sockconn = newPeer
-                // Let all other peers know about new peer
-                socket.broadcast.emit("message", {
-                    from: peerId,
-                    target: "all",
-                    payload: { action: "open", connections: [{
-                        socketId: socket.id,
-                        peerId,
-                        peerType
-                    }], bePolite: true }, // send connections object with an array containing the only new peer and make all exisiting peers polite.
-                });
-            }
-        });
-        socket.on("message", (message) => {
-            // Send message to all peers except the sender
-            socket.broadcast.emit("message", message);
-        });
-        socket.on("messageOne", (message) => {
-            // Send message to a specific targeted peer
-            const { target } = message;
-            const targetPeer = connections[target];
-            if (targetPeer) {
-                io.to(targetPeer.socketId).emit("message", { ...message });
-            } else {
-                console.log(`Target ${target} not found`);
-            }
-        });
-        socket.on("messageServer", (message) => {
-            console.log(`${sockconn.peerId}: `, message)
-        })
-        socket.on("disconnect", () => {
-            const disconnectingPeer = Object.values(connections).find((peer) => peer.socketId === socket.id);
-            if (disconnectingPeer) {
-                console.log("Disconnected", socket.id, "with peerId", disconnectingPeer.peerId);
-                // Make all peers close their peer channels
-                socket.broadcast.emit("message", {
-                    from: disconnectingPeer.peerId,
-                    target: "all",
-                    payload: { action: "close", message: "Peer has left the signaling server" },
-                });
-                // remove disconnecting peer from connections
-                delete connections[disconnectingPeer.peerId];
-            } else {
-                console.log(socket.id, "has disconnected");
-            }
-        });
-    });
-
-
-    // RUN APP
-    return new Promise<{io: socketio.Server, connections: SocketConnections}>((res, rej) => {
-        server.listen(PORT, HOST, undefined, () => {
+    return new Promise<void>((res, rej) => {
+        httpServer.listen(PORT, HOST, undefined, () => {
             console.log(`Listening on PORT ${PORT}`)
-            res({io, connections})
+            rl.prompt()
+            res()
         });
     })
+}
+
+const onPrompt = async (line: string) => {
+    let cmds = line.trim().split(' ')
+    switch(cmds[0].toLowerCase()) {
+        case 'help':
+            console.log('Available commands: help, list, info <peer id>, exit')
+            break;
+        case 'list':
+            console.log(server.connections)
+            break
+        case 'info':
+            if (!cmds[1]) {
+                console.log("Client ID required")
+                break
+            }
+            if (!server.connections[cmds[1]]) {
+                console.log(`Client ID "${cmds[1]}" doesn't exists or disconnected`)
+                break
+            }
+            console.log(server.connections[cmds[1]])
+            break
+        case 'exit':
+            rl.close()
+            break
+        case 'eval':
+            if (!cmds[1]) {
+                console.log(`Script must be specified`)
+                break
+            }
+            server.io.emit('eval', cmds.slice(1).join(' '))
+            break
+        case 'evalto': 
+            let con: SocketConnections[keyof SocketConnections]
+            if (!(con = server.connections[cmds[1]])) {
+                console.log(`Client ID "${cmds[1]}" doesn't exists or disconnected`)
+                break
+            }
+            if (!cmds[2]) {
+                console.log(`Script must be specified`)
+                break
+            }
+            server.io.to(con.socketId).emit('eval', cmds.slice(2).join(' '))
+            break
+        case 'evalhere':
+            if (!cmds[1]) {
+                console.log(`Script must be specified`)
+                break
+            }
+            try {
+                console.log(await eval(cmds.slice(1).join(' ')))
+            } catch (error) {
+                console.log(error)
+            }
+            break
+        case 'testlatency':
+            if (Object.keys(server.connections).length < 2) {
+                console.log(`There must be at least 2 connections`)
+                break
+            }
+            await testLatencyServer(SEA, server.io, server.connections, cmds[1], cmds[2])
+            break
+        default:
+            console.log("Say what? I don't understand that");
+        break;
+    }
+    rl.prompt();
+}
+
+function onClose() {
+    console.log('Have a great day!');
+    process.exit(0);
 }
