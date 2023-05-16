@@ -2,6 +2,7 @@ FROM node:alpine as build
 
 WORKDIR /app
 ENV NODE_ENV=production
+ENV HEADLESS='yes'
 
 RUN apk add --no-cache chromium \ 
   && rm -rf /var/cache/apk/* /tmp/*
