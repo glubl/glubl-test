@@ -2,6 +2,7 @@ import { uuid } from "./uuid";
 
 type NodeType = 'CLIENT' | 'SERVER'
 
+export const HEADLESS = process.env.HEADLESS === undefined ? false : 'new'
 export const HOST = process.env.HOST || 'localhost'
 export const PORT = parseInt(process.env.PORT || '3030');
 export const DEV = process.env.NODE_ENV === "development";

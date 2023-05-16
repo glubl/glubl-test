@@ -1,5 +1,5 @@
 import { SocketClient } from "./libs/socket";
-import { NODE_ID, SERVER_URL, TOKEN } from './libs/config'
+import { HEADLESS, NODE_ID, SERVER_URL, TOKEN } from './libs/config'
 import { Socket } from "socket.io";
 import puppeteer, { Browser, Page } from 'puppeteer';
 
@@ -8,7 +8,7 @@ var client: SocketClient
 var browser: Browser
 var { testLatencyClient } = require("./tests")
 export async function initClient() {
-    browser = await puppeteer.launch({ headless: false });
+    browser = await puppeteer.launch({ headless: HEADLESS });
     console.log(`Setting up client`)
     console.log(`Connecting to ${SERVER_URL} as ${NODE_ID}`)
     client = new SocketClient(NODE_ID, SERVER_URL, TOKEN, console.log, onEval)
