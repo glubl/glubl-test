@@ -3,7 +3,7 @@ FROM node:alpine as build
 WORKDIR /app
 ENV NODE_ENV=production
 
-RUN apk add --no-cache chromium 
+RUN apk add --no-cache chromium \ 
   && rm -rf /var/cache/apk/* /tmp/*
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD true
