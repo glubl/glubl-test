@@ -41,6 +41,7 @@ export async function testLatencyServer(SEA: any, io: Server, connections: Socke
     conn1.socket.on("testLatencyResponse", cb)
     conn2.socket.on("testLatencyResponse", cb)
     var i = times || 5
+    alternate ??= true
     console.log(`Starting latency test for ${i} times`)
     while(i > 0) {
         let testId = uuid()
