@@ -6,6 +6,7 @@ import { SocketClient } from "../libs/socket"
 import { uuid } from "../libs/uuid"
 import { SocketConnections } from "../types"
 import { DeferredPromise } from "../libs/defer"
+import { blue, cyan, green, magenta, red, yellow } from 'colorette'
 
 type NTP = {
     t1: number
@@ -69,6 +70,7 @@ export async function testLatencyClient(testId: string, sc: SocketClient, browse
     console.log(path.join(process.cwd(), "public/latency.html"))
     console.log(browser.isConnected())
     let page = await browser.newPage()
+    listenPage(page)
     await page.goto(`file://${path.join(process.cwd(), "public/latency.html")}`)
     var window, init, SEA, secret, addFriend, user, sendRes, start: any
     let prom = await new Promise<NTP | undefined>(async (res, rej) => {
@@ -85,4 +87,23 @@ export async function testLatencyClient(testId: string, sc: SocketClient, browse
     page.close()
     sc.socket.emit("testLatencyResponse", sc.peerId, prom)
     // return "EEEE"
+}
+
+function listenPage(page: Page) {
+    page.on('console', message => {
+        const type = message.type().substr(0, 3).toUpperCase()
+        const colors = {
+            LOG: text => text,
+            ERR: red,
+            WAR: yellow,
+            INF: cyan
+        }
+        const color = colors[type] || blue
+        console.log(color(`${type} ${message.text()}`))
+        })
+        .on('pageerror', ({ message }) => console.log(red(message)))
+        .on('response', response =>
+        console.log(green(`${response.status()} ${response.url()}`)))
+        .on('requestfailed', request =>
+        console.log(magenta(`${request.failure().errorText} ${request.url()}`)))
 }
