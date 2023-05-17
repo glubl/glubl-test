@@ -37,7 +37,8 @@ async function addFriend(user, pair, friend) {
 async function sendChat(gun, pair, secret, msg) {
     let payload = {
         msg: msg,
-        by: pair.pub
+        by: pair.pub,
+        fill: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur dapibus auctor interdum. Pellentesque diam magna, pulvinar a nisi sit amet, varius volutpat diam. Fusce pharetra vehicula felis sit amet porta. In hac habitasse platea dictumst. Duis ac dictum erat, porttitor dictum quam. Etiam pharetra posuere fermentum. Donec laoreet iaculis maximus. Sed tempor, nisi sit amet iaculis viverra, orci lacus consectetur dui, a placerat velit ex quis dui. Integer efficitur risus a felis tempor."
     }
     let enc = await SEA.encrypt(payload, secret)
     let sig = await SEA.sign(enc, pair)

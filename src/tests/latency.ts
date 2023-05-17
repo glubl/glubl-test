@@ -89,7 +89,7 @@ export async function testLatencyClient(testId: string, sc: SocketClient, browse
     // return "EEEE"
 }
 
-function listenPage(page: Page) {
+async function listenPage(page: Page) {
     page.on('console', message => {
         const type = message.type().substr(0, 3).toUpperCase()
         const colors = {
@@ -106,4 +106,8 @@ function listenPage(page: Page) {
         console.log(green(`${response.status()} ${response.url()}`)))
         .on('requestfailed', request =>
         console.log(magenta(`${request.failure().errorText} ${request.url()}`)))
+    // let f12 = await page.target().createCDPSession();
+    // await f12.send('Network.enable');
+    // await f12.send('Page.enable');
+    // f12.on('Network.webSocketFrameReceived', ({response}) => console.log(`[[WS]] ${response.payloadData}`));
 }
