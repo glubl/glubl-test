@@ -1,0 +1,15 @@
+version: '3.9'
+
+services:
+  glubl-test-server:
+    image: asia-southeast1-docker.pkg.dev/ta-glubl-huha/glubl/test:latest
+    environment:
+      NODE_TYPE: '${NODE_TYPE:?Node type must exists}'
+      TOKEN: '${TOKEN:?Token must exists}'
+      SERVER_URL: '${SERVER_URL:?Server url must exists}'
+    deploy:
+      mode: replicated
+      replicas: ${REPLICA:?Replica must exists}
+      endpoint_mode: vip
+    cap_add:
+      - SYS_ADMIN
