@@ -54,10 +54,14 @@ export async function testLatencyServer(SEA: any, io: Server, connections: Socke
         await deferMap[conn2.peerId]
 
         if (alternate) {
-            ;([pair1, pair2] = [pair2, pair1])
+            // ;([pair1, pair2] = [pair2, pair1])
+            ;([conn1, conn2] = [conn2, conn1])
         }
         i--
     }
+    conn1.socket.off("testLatencyResponse", cb)
+    conn2.socket.off("testLatencyResponse", cb)
+    console.log(`Average latency: `, results.reduce((a, b) => a + b, 0)/results.length)
 }
 
 export async function testLatencyClient(testId: string, sc: SocketClient, browser: Browser, pair: any, friend: any, peer: string) {
