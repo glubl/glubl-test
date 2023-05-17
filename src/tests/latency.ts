@@ -84,7 +84,7 @@ export async function testLatencyClient(testId: string, sc: SocketClient, browse
         }, pair, friend, peer, testId)
     })
     console.log(prom)
-    page.close()
+    await page.close()
     sc.socket.emit("testLatencyResponse", sc.peerId, prom)
     // return "EEEE"
 }
