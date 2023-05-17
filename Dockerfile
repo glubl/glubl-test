@@ -1,11 +1,7 @@
 FROM node:alpine as build
 
-WORKDIR /app
+WORKDIR /build
 ENV NODE_ENV=production
-ENV HEADLESS='yes'
-
-RUN apk add --no-cache chromium \ 
-  && rm -rf /var/cache/apk/* /tmp/*
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
@@ -17,7 +13,20 @@ RUN yarn
 COPY . .
 RUN yarn build
 
-RUN addgroup pptruser \
+FROM node:alpine
+
+WORKDIR /app
+ENV NODE_ENV=production
+ENV HEADLESS='yes'
+
+COPY --from=build /build/node_modules node_modules
+COPY --from=build /build/dist dist
+COPY --from=build /root/.cache/puppeteer /home/pptruser/.cache/puppeteer
+COPY . .
+
+RUN apk add --no-cache chromium \ 
+ && rm -rf /var/cache/apk/* /tmp/* \
+ && addgroup pptruser \
  && adduser pptruser -D -G pptruser \
  && mkdir -p /home/pptruser/Downloads \
  && chown -R pptruser:pptruser /home/pptruser \
@@ -25,4 +34,4 @@ RUN addgroup pptruser \
 
 USER pptruser
 
-CMD ["yarn", "start"]
+CMD ["node", "dist/index.js"]
