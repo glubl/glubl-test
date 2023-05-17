@@ -47,7 +47,7 @@
         if (initiator) {
             var t1
             let nextPath = gun.back("opt.uuid")()
-            let fut = new Promise((res, rej) => {
+            let [fut1, fut2] = [new Promise((res, rej) => {
                 myGun.get(nextPath)
                     .on(async (v, k, _, e) => {
                         let t4 = +new Date
@@ -58,14 +58,12 @@
                         if (!msg) return
                         let t3 = v.ts
                         let t2 = msg
+                        t1 = await fut2
                         res({t1, t2, t3, t4})
                         e.off()
                     })
-            })
-            
-            t1 = await sendChat(friendGun.get(firstPath), pair, secret, nextPath)
-            console.log(t1)
-            return fut
+            }), sendChat(friendGun.get(firstPath), pair, secret, nextPath)]
+            return fut1
         } else {
             return new Promise((res, rej) => {
                 myGun.get(firstPath)

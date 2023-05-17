@@ -92,7 +92,20 @@ const onPrompt = async (line: string) => {
                 console.log(`There must be at least 2 connections`)
                 break
             }
-            await testLatencyServer(SEA, server.io, server.connections, cmds[1], cmds[2])
+            let times: number | undefined
+            if (cmds[3]) {
+                try {
+                    times = parseInt(cmds[3])
+                } catch (error) {}
+            }
+            await testLatencyServer(
+                SEA, 
+                server.io, 
+                server.connections, 
+                cmds[1], 
+                cmds[2],
+                times
+            )
             break
         default:
             console.log("Say what? I don't understand that");
