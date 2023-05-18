@@ -127,6 +127,25 @@ const onPrompt = async (line: string) => {
                 times
             )
             break
+        case 'testlatency3':
+            if (Object.keys(server.connections).length < 2) {
+                console.log(`There must be at least 2 connections`)
+                break
+            }
+            var times: number | undefined
+            if (cmds[1]) {
+                try {
+                    times = parseInt(cmds[1])
+                } catch (error) {}
+            }
+            await testLatencyServer(
+                SEA, 
+                server.io, 
+                server.connections, 
+                'ALL_TIMEOUT',
+                times
+            )
+            break
         default:
             console.log("Say what? I don't understand that");
         break;

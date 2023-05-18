@@ -27,6 +27,82 @@
         user = res.user
     }
 
+    async function start3(path, timeout, peerNum) {
+        console.log(timeout)
+        let start = +new Date
+        return new Promise(async (res, rej) => {
+            let eve
+            gun.get('gtest')
+                .get(path)
+                .put({})
+                .map()
+                .on(async (v, k, meta, e) => {
+                    let t2 = +new Date
+                    eve = e
+                    console.log("Recv")
+                    let { d, ts, pub } = JSON.parse(v||'') || {}
+                    if (!d || !ts || !pub) {
+                        console.log("Invalid data")
+                        return
+                    }
+                    if (pub === pair.pub) return
+                    
+                    //await new Promise((res) => setTimeout(res, 500))
+                    let msg = await decryptChat(pub, path, d)
+                    if (!msg) {
+                        console.log("Can't decrypt data")
+                        return
+                    }
+                    
+                    console.log('Send ack')
+                    gun.on('out', {
+                        '@': ''+meta["#"],                                       
+                        'ok': {
+                            t1: ts,
+                            t2: t2,
+                            t3: +new Date
+                        }
+                    })
+                })
+
+            await new Promise((res) => setTimeout(res, randInt(500, 1000)))
+            let fn
+            setTimeout(fn = async () => {
+                console.log((new Date().getTime() - start))
+                if ((new Date().getTime() - start) > timeout) {
+                    res()
+                    if (eve)
+                        eve.off()
+                    return
+                }
+
+                let dt = new Date()
+                gun.get('gtest')
+                    .get(path)
+                    .put({
+                        [dt.toISOString()+gun.back("opt.uuid")()]: JSON.stringify({
+                            d: await encryptChat(pair, path, LOREM),
+                            ts: +dt,
+                            pub: pair.pub
+                        })
+                    }, async ({err, ok}) => {
+                        let t4 = +new Date
+                        console.log("Recv")
+                        if (!!err || !ok || !ok.t3) {
+                            console.log("No data", err)
+                            return
+                        }
+                        let { t1, t2, t3 } = ok
+                        sendResult({ t1, t2, t3, t4 })
+                    }, { 
+                        acks: 999
+                    })
+                setTimeout(fn, randInt(500, 1000))
+            }, randInt(500, 1000))
+            
+        })
+    }
+
     async function start2(path, msgNum, peerNum) {
         console.log(path, msgNum, peerNum)
         return new Promise(async (res, rej) => {

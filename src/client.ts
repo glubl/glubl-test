@@ -6,7 +6,7 @@ import puppeteer, { Browser, Page } from 'puppeteer';
 
 var client: SocketClient
 var browser: Browser
-var { testLatencyClient1, testLatencyClient2 } = require("./tests")
+var { testLatencyClient1, testLatencyClient2, testLatencyClient3 } = require("./tests")
 export async function initClient() {
     browser = await puppeteer.launch({ headless: HEADLESS });
     console.log(`Setting up client`)

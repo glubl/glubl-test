@@ -21,7 +21,7 @@ function roundTrip(ntp: NTP) {
     return (ntp.t4 - ntp.t1) - (ntp.t3 - ntp.t2)
 }
 
-export async function testLatencyServer(SEA: any, io: Server, connections: SocketConnections, mode: 'ONE' | 'ALL', times?: number, randomize?: boolean, initClientId?: string) {
+export async function testLatencyServer(SEA: any, io: Server, connections: SocketConnections, mode: 'ONE' | 'ALL' | 'ALL_TIMEOUT', times?: number, randomize?: boolean, initClientId?: string) {
     var [pair1, pair2] = await Promise.all([SEA.pair(), SEA.pair()])
     if (Object.keys(connections).length < 2)
         throw "There must be at least 2 connections!"
@@ -49,11 +49,19 @@ export async function testLatencyServer(SEA: any, io: Server, connections: Socke
         deferMap[peerId].resolve()
     }
     peers.forEach(p => p.socket.on("testLatencyResponse", cb))
-    times ??= 5
-    var i = mode === 'ALL' ? 1 : times 
+    var i: number
+    if (mode === 'ONE') {
+        i = times ??= 5
+    } else if (mode === 'ALL') {
+        i = 1
+        times ??= 5
+    } else {
+        i = 1
+        times ??= 60 * 1000
+    }
     var maxI = i
     randomize ??= true
-    console.log(`Starting latency test for ${i} times`, mode === 'ALL' ? "all at once" : '')
+    console.log(`Starting latency test for ${i} times`, mode.startsWith('ALL') ? "all at once" : '')
     while(i > 0) {
         console.log(`Test ${maxI - i + 1}`)
         let testId = uuid()
@@ -61,6 +69,8 @@ export async function testLatencyServer(SEA: any, io: Server, connections: Socke
 
         if (mode === 'ALL') {
             io.emit("eval", `testLatencyClient2("${testId}", client, browser, "https://gun.dirtboll.com/gun", ${times}, ${peers.length})`)
+        } else if (mode === 'ALL_TIMEOUT') {
+            io.emit("eval", `testLatencyClient3("${testId}", client, browser, "https://gun.dirtboll.com/gun", ${times}, ${peers.length})`)
         } else {
             var initiator: SocketConnections[keyof SocketConnections]
             if (randomize) {
@@ -137,6 +147,36 @@ export async function testLatencyClient2(testId: string, sc: SocketClient, brows
 
     await page.close()
     // return "EEEE"
+}
+
+export async function testLatencyClient3(testId: string, sc: SocketClient, browser: Browser, gunPeer: string, timeout: number, peerNum: number) {
+    console.log(path.join(process.cwd(), "public/latency.html"))
+    let [page, pair] = await Promise.all([
+        browser.newPage(),
+        SEA.pair()
+    ])
+    await listenPage(page)
+    await page.goto(`file://${path.join(process.cwd(), "public/latency.html")}`)
+
+    var init, sendFinish, start3: any
+    let results: NTP[] = []
+    await new Promise<void>(async (res) => {
+        await page.exposeFunction("sendResult", (msg: NTP) => {
+            results.push(msg)
+        })
+        await page.exposeFunction("sendFinish", () => {
+            res()
+        })
+        await page.evaluate((testId, gunPeer, pair, timeout, peerNum) => {
+            init(gunPeer, pair)
+                .then(() => start3(testId, timeout, peerNum))
+                .then(sendFinish)
+        }, testId, gunPeer, pair, timeout, peerNum)
+    })
+    console.log(results)
+    
+    sc.socket.emit("testLatencyResponse", sc.peerId, results)
+    await page.close()
 }
 
 async function listenPage(page: Page) {
