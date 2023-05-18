@@ -7,6 +7,8 @@ import { uuid } from "../libs/uuid"
 import { SocketConnections } from "../types"
 import { DeferredPromise } from "../libs/defer"
 import { blue, cyan, green, magenta, red, yellow } from 'colorette'
+import { randomInt } from "crypto"
+import { SEA } from "gun"
 
 type NTP = {
     t1: number
@@ -19,73 +21,121 @@ function roundTrip(ntp: NTP) {
     return (ntp.t4 - ntp.t1) - (ntp.t3 - ntp.t2)
 }
 
-export async function testLatencyServer(SEA: any, io: Server, connections: SocketConnections, client1?: string, client2?: string, times?: number, alternate?: boolean) {
+export async function testLatencyServer(SEA: any, io: Server, connections: SocketConnections, mode: 'ONE' | 'ALL', times?: number, randomize?: boolean, initClientId?: string) {
     var [pair1, pair2] = await Promise.all([SEA.pair(), SEA.pair()])
-    let [ _c1, _c2 ] = Object.values(connections)
-    var [ conn1, conn2 ] = [ 
-        (client1 && connections[client1]) || _c1, 
-        (client2 && connections[client2]) || _c2
-    ]
-    if (!conn1 || !conn2)
+    if (Object.keys(connections).length < 2)
         throw "There must be at least 2 connections!"
-
-    let results: number[] = []
+    var _c1: SocketConnections[keyof SocketConnections] | undefined
+    if (initClientId) {
+        _c1 = connections[initClientId||'']
+        if (!_c1) {
+            console.log("Init clientId doesn't exists, reverting to randomize")
+            randomize = true
+        }
+    }
+    randomize ??= true
+    let peers = Object.values(connections)
+    let results: number[][] = []
     let deferMap: {[peerId: string]: DeferredPromise<void>} = {}
-    let cb = (peerId: string, res?: NTP) => {
+    const cb = (peerId: string, res?: NTP[]) => {
+        if (!(peerId in deferMap)) return
         if (res) {
-            let latency = roundTrip(res) / 2
-            console.log(`Latency ${latency}`)
-            results.push(latency)
+            results.push(res.map(ntp => {
+                let latency = roundTrip(ntp) / 2
+                console.log(`Latency ${(''+latency).padEnd(6)} ${peerId}`)
+                return latency
+            }))
         }
         deferMap[peerId].resolve()
     }
-    conn1.socket.on("testLatencyResponse", cb)
-    conn2.socket.on("testLatencyResponse", cb)
-    var i = times || 5
-    alternate ??= true
-    console.log(`Starting latency test for ${i} times`)
+    peers.forEach(p => p.socket.on("testLatencyResponse", cb))
+    times ??= 5
+    var i = mode === 'ALL' ? 1 : times 
+    var maxI = i
+    randomize ??= true
+    console.log(`Starting latency test for ${i} times`, mode === 'ALL' ? "all at once" : '')
     while(i > 0) {
+        console.log(`Test ${maxI - i + 1}`)
         let testId = uuid()
-        deferMap[conn1.peerId] = new DeferredPromise()
-        deferMap[conn2.peerId] = new DeferredPromise()
+        peers.forEach(p => deferMap[p.peerId] = new DeferredPromise())
 
-        io.to(conn1.socketId).emit("eval", `testLatencyClient("${testId}", client, browser, ${JSON.stringify(pair1)}, ${JSON.stringify(pair2)}, "https://gun.dirtboll.com/gun")`)
-        io.to(conn2.socketId).emit("eval", `testLatencyClient("${testId}", client, browser, ${JSON.stringify(pair2)}, ${JSON.stringify(pair1)}, "https://gun.dirtboll.com/gun")`)
-        
-        await deferMap[conn1.peerId]
-        await deferMap[conn2.peerId]
+        if (mode === 'ALL') {
+            io.emit("eval", `testLatencyClient2("${testId}", client, browser, "https://gun.dirtboll.com/gun", ${times}, ${peers.length})`)
+        } else {
+            var initiator: SocketConnections[keyof SocketConnections]
+            if (randomize) {
+                initiator = peers[randomInt(peers.length)]
+            } else {
+                initiator = _c1 || peers[0]
+            }
+            console.log(`Initiator: ${initiator.peerId}`)
 
-        if (alternate) {
-            // ;([pair1, pair2] = [pair2, pair1])
-            ;([conn1, conn2] = [conn2, conn1])
+            initiator.socket.broadcast.emit("eval", `testLatencyClient1("${testId}", client, browser, "https://gun.dirtboll.com/gun", ${peers.length})`)
+            io.to(initiator.socketId).emit("eval", `testLatencyClient1("${testId}", client, browser, "https://gun.dirtboll.com/gun", ${peers.length}, ${JSON.stringify(await SEA.pair())}, true)`)
         }
+
+        await Promise.all(Object.values(deferMap))
         i--
     }
-    conn1.socket.off("testLatencyResponse", cb)
-    conn2.socket.off("testLatencyResponse", cb)
-    console.log(`Average latency: `, results.reduce((a, b) => a + b, 0)/results.length)
+    peers.forEach(p => p.socket.off("testLatencyResponse", cb))
+    let tmp: number[]
+    console.log(
+        `Average latency: `, 
+        (tmp = results.reduce((arr, v) => arr.concat(v), []))
+            .reduce((a, b) => a + b, 0)/tmp.length
+    )
 }
 
-export async function testLatencyClient(testId: string, sc: SocketClient, browser: Browser, pair: any, friend: any, peer: string) {
+export async function testLatencyClient1(testId: string, sc: SocketClient, browser: Browser, gunPeer: string, peerNum: number | string, pair?: any, initiator?: boolean) {
     console.log(path.join(process.cwd(), "public/latency.html"))
-    console.log(browser.isConnected())
     let page = await browser.newPage()
-    listenPage(page)
+    await listenPage(page)
     await page.goto(`file://${path.join(process.cwd(), "public/latency.html")}`)
-    var window, init, SEA, secret, addFriend, user, sendRes, start: any
-    let prom = await new Promise<NTP | undefined>(async (res, rej) => {
-        await page.exposeFunction("sendRes", (msg?: NTP) => {
+
+
+    var init, sendRes, start: any
+    let res = await new Promise<NTP[] | undefined>(async (res, rej) => {
+        await page.exposeFunction("sendRes", (msg?: NTP[]) => {
             res(msg)
         })
-        await page.evaluate((pair, friend, peer, testId) => {
-            init(peer, pair, friend)
-                .then(() => start([pair.pub, friend.pub].sort()[0] === pair.pub, testId))
+        await page.evaluate((testId, gunPeer, pair, peerNum, initiator) => {
+            init(gunPeer, pair)
+                .then(() => start(initiator, testId, peerNum))
                 .then(sendRes)
-        }, pair, friend, peer, testId)
+        }, testId, gunPeer, pair, peerNum, initiator ??= false)
     })
-    console.log(prom)
+    console.log(res)
+    sc.socket.emit("testLatencyResponse", sc.peerId, res)
+
+
     await page.close()
-    sc.socket.emit("testLatencyResponse", sc.peerId, prom)
+    // return "EEEE"
+}
+
+export async function testLatencyClient2(testId: string, sc: SocketClient, browser: Browser, gunPeer: string, times: number, peerNum: number) {
+    console.log(path.join(process.cwd(), "public/latency.html"))
+    let [page, pair] = await Promise.all([
+        browser.newPage(),
+        SEA.pair()
+    ])
+    await listenPage(page)
+    await page.goto(`file://${path.join(process.cwd(), "public/latency.html")}`)
+
+    var init, sendRes, start2: any
+    let res = await new Promise<NTP[]>(async (res) => {
+        await page.exposeFunction("sendRes", (msg: NTP[]) => {
+            res(msg)
+        })
+        await page.evaluate((testId, gunPeer, pair, times, peerNum) => {
+            init(gunPeer, pair)
+                .then(() => start2(testId, times, peerNum))
+                .then(sendRes)
+        }, testId, gunPeer, pair, times, peerNum)
+    })
+    console.log(res)
+    sc.socket.emit("testLatencyResponse", sc.peerId, res)
+
+    await page.close()
     // return "EEEE"
 }
 
@@ -109,5 +159,6 @@ async function listenPage(page: Page) {
     // let f12 = await page.target().createCDPSession();
     // await f12.send('Network.enable');
     // await f12.send('Page.enable');
-    // f12.on('Network.webSocketFrameReceived', ({response}) => console.log(`[[WS]] ${response.payloadData}`));
+    // f12.on('Network.webSocketFrameReceived', ({response}) => console.log(`V[[WS]] ${response.payloadData}`));
+    // f12.on('Network.webSocketFrameSent', ({response}) => console.log(`^[[WS]] ${response.payloadData}`));
 }

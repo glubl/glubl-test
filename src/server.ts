@@ -87,23 +87,43 @@ const onPrompt = async (line: string) => {
                 console.log(error)
             }
             break
-        case 'testlatency':
+        case 'testlatency1':
             if (Object.keys(server.connections).length < 2) {
                 console.log(`There must be at least 2 connections`)
                 break
             }
-            let times: number | undefined
-            if (cmds[3]) {
+            var times: number | undefined
+            if (cmds[1]) {
                 try {
-                    times = parseInt(cmds[3])
+                    times = parseInt(cmds[1])
                 } catch (error) {}
             }
             await testLatencyServer(
                 SEA, 
                 server.io, 
                 server.connections, 
-                cmds[1], 
-                cmds[2],
+                'ONE',
+                times, 
+                typeof cmds[2] === "undefined",
+                cmds[2]
+            )
+            break
+        case 'testlatency2':
+            if (Object.keys(server.connections).length < 2) {
+                console.log(`There must be at least 2 connections`)
+                break
+            }
+            var times: number | undefined
+            if (cmds[1]) {
+                try {
+                    times = parseInt(cmds[1])
+                } catch (error) {}
+            }
+            await testLatencyServer(
+                SEA, 
+                server.io, 
+                server.connections, 
+                'ALL',
                 times
             )
             break

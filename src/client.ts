@@ -6,7 +6,7 @@ import puppeteer, { Browser, Page } from 'puppeteer';
 
 var client: SocketClient
 var browser: Browser
-var { testLatencyClient } = require("./tests")
+var { testLatencyClient1, testLatencyClient2 } = require("./tests")
 export async function initClient() {
     browser = await puppeteer.launch({ headless: HEADLESS });
     console.log(`Setting up client`)
@@ -18,7 +18,7 @@ export async function initClient() {
 const onEval = async (code: string, ack?: (...args: any[]) => void) => {
     var res: any
     try {
-        console.log("receive eval")
+        console.log("receive eval", code)
         res = eval(code)
     } catch (error) {
         res = error
