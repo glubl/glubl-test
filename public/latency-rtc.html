@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gunjs Template</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
+    <script src="./gun/gun.js"></script>
+    <script src="./gun/sea.js"></script>
+    <script src="./gun/lib/radix.js"></script>
+    <script src="./gun/lib/radisk.js"></script>
+    <script src="./gun/lib/store.js"></script>
+    <script src="./gun/lib/rindexed.js"></script>
+    <script src="./libs.js"></script>
+    <script src="./debugger.js"></script>
+    <script src="./iochannel.js"></script>
+    <script src="./rtcpeer.js"></script>
+</head>
+<body>
+    
+</body>
+<script>
+    const _debugger = Debugger("html", true)
+    async function init(room, peer, pair) {
+        //console.log(peer, pair)
+        //peer = peer || "https://gun.glubl.io/gun"
+        pair = pair || await SEA.pair()
+        localStorage.clear()
+        await new Promise(res => indexedDB.deleteDatabase("radata").onsuccess = res)
+        
+
+        gun = Gun()
+        user = gun.user()
+        user.auth(pair)
+        mesh = gun.back("opt.mesh")
+
+        channel = new SignalingChannel(gun.back("opt.uuid")(), "https://test.master.glubl.io/", "swololo")
+        let p = new Promise((res) => {
+            channel.socket.on("connect", function fn() {
+                channel.socket.off("connect", fn)
+                res()
+            })
+        })
+        channel.connect()
+        await p
+        channel.socket.on("initRTC", initRTC)
+    }
+
+    rtcPeers = {}
+    async function initRTC(peers) {
+        _debugger.log(peers)
+        let oldPeers = new Set(Object.keys(rtcPeers))
+        for (const peerId of peers) {
+            oldPeers.delete(peerId) 
+            _debugger.log(peerId)
+            if (peerId in rtcPeers && rtcPeers[peerId].rtc.isConnected) continue
+            let tmp
+            let p = rtcPeers[peerId] ??= {}
+            let gunPeer = p.rtc ??= new RTCPeer(peerId, channel.peerId)
+            let sendFn = p.sendFn = async (msg) => {
+                channel.sendTo(peerId, msg)
+            }
+            let recvFn = p.recvFn = async (msg) => {
+                let { target, from, payload } = msg||{}
+                if (target !== channel.peerId || from !== peerId) return
+                gunPeer.emit("recv-signal", payload)
+            }
+            
+            channel.socket.on("message", recvFn)
+            gunPeer.on("send-signal", sendFn)
+            gunPeer.connect()
+            
+            function close() {
+                _debugger.log("{{data channel}} close", this.label)
+                gunPeer.wire = null
+                mesh.bye(gunPeer)
+            }
+            function error(ev) {
+                _debugger.log("{{data channel}} error", this.label, ev)
+                gunPeer.wire = null
+                mesh.bye(gunPeer)
+            }
+            function open() {
+                _debugger.log("{{data channel}} open", this.label)
+                gunPeer.wire = this
+                gunPeer.id = peerId
+                mesh.hi(gunPeer)
+            }
+            function message(msg) {
+                if (!msg.data) return
+                _debugger.log("::msg::", msg.data)
+                mesh.hear(msg.data, gunPeer)
+            }
+            rtcPeers[peerId].rtc.addDataChannel('gun', message, open, close, error)
+        }
+        for (peerId of oldPeers) {
+            rtcPeers[peerId].rtc.off("send-signal", rtcPeers[peerId].sendFn)
+            channel.socket.off("message", rtcPeers[peerId].recvFn)
+            rtcPeers[peerId].rtc.disconnect()
+            delete rtcPeers[peerId]
+        }
+    }
+    init()
+</script>
+</html>
