@@ -23,13 +23,9 @@
 <script>
     const _debugger = Debugger("html", true)
     async function init(room, peer, pair) {
-        //console.log(peer, pair)
-        //peer = peer || "https://gun.glubl.io/gun"
-        pair = pair || await SEA.pair()
+        window.pair = pair ??= await SEA.pair()
         localStorage.clear()
-        await new Promise(res => indexedDB.deleteDatabase("radata").onsuccess = res)
-        
-
+    
         gun = Gun()
         user = gun.user()
         user.auth(pair)
@@ -45,8 +41,10 @@
         channel.connect()
         await p
         channel.socket.on("initRTC", initRTC)
+        channel.socket.on("gun-exec", initTest)
     }
 
+    netPeers = {}
     rtcPeers = {}
     async function initRTC(peers) {
         _debugger.log(peers)
@@ -58,18 +56,44 @@
             let tmp
             let p = rtcPeers[peerId] ??= {}
             let gunPeer = p.rtc ??= new RTCPeer(peerId, channel.peerId)
+            
+            let peerPub = undefined
             let sendFn = p.sendFn = async (msg) => {
-                channel.sendTo(peerId, msg)
+                var dat = msg
+                if (!!peerPub) {
+                    let enc = await SEA.encrypt(msg, peerPub.shared)
+                    dat = await SEA.sign(enc, pair)
+                }
+                channel.sendTo(peerId, dat)
             }
             let recvFn = p.recvFn = async (msg) => {
                 let { target, from, payload } = msg||{}
                 if (target !== channel.peerId || from !== peerId) return
-                gunPeer.emit("recv-signal", payload)
+                if (!peerPub) {
+                    if (!!payload.pub && !!payload.epub) {
+                        sendFn({ pub: pair.pub, epub: pair.epub })
+                        peerPub = netPeers[peerId] = { 
+                            pub: payload.pub, 
+                            epub: payload.epub,
+                            shared: await SEA.secret(payload.epub, pair)
+                        }
+                        gunPeer.connect()
+                    } 
+                    return
+                }
+                if (typeof payload !== "string") return
+                let enc = await SEA.verify(payload, peerPub.pub)
+                let dat = await SEA.decrypt(enc, peerPub.shared)
+                if (!dat) {
+                    _debugger.warn("No data!")
+                    return
+                }
+                gunPeer.emit("recv-signal", dat)
             }
             
             channel.socket.on("message", recvFn)
             gunPeer.on("send-signal", sendFn)
-            gunPeer.connect()
+            sendFn({ pub: pair.pub, epub: pair.epub })
             
             function close() {
                 _debugger.log("{{data channel}} close", this.label)
@@ -85,11 +109,12 @@
                 _debugger.log("{{data channel}} open", this.label)
                 gunPeer.wire = this
                 gunPeer.id = peerId
+                channel.socket.emit("gun-ready", {})
                 mesh.hi(gunPeer)
             }
             function message(msg) {
                 if (!msg.data) return
-                _debugger.log("::msg::", msg.data)
+                //_debugger.log("::msg::", msg.data)
                 mesh.hear(msg.data, gunPeer)
             }
             rtcPeers[peerId].rtc.addDataChannel('gun', message, open, close, error)
@@ -100,6 +125,48 @@
             rtcPeers[peerId].rtc.disconnect()
             delete rtcPeers[peerId]
         }
+    }
+
+    async function initTest() {
+        gun.get("profiles").get(channel.peerId).put({
+            pub: pair.pub,
+            epub: pair.epub
+        })
+        gun.get("test").get(channel.peerId).map().on(async (v, k, meta, e) => {
+            let t2 = +new Date
+            console.log("Recv")
+            const { d, ts, pub, epub, peerId } = JSON.parse(v||'') || {}
+            if (!d || !ts || !pub || !epub || !peerId) {
+                console.error("Invalid data", v)
+                return
+            }
+            if (pub === pair.pub) return
+            
+            let { shared } = netPeers[peerId] ??= {
+                pub: pub,
+                epub: epub,
+                shared: await SEA.secret(epub, pair)
+            }
+            let enc = await SEA.verify(d, pub)
+            let dat = await SEA.decrypt(enc, shared)
+            if (!dat) {
+                console.error("Can't decrypt data", dat, env, d, netPeers[peerId])
+                return
+            }
+            
+            console.log('Send ack')
+            // TODO
+            gun.on('out', {
+                '@': ''+meta["#"],                                       
+                'ok': await SEA.sign(
+                    await SEA.encrypt({
+                        t1: ts,
+                        t2: t2,
+                        t3: +new Date
+                    }, shared)
+                )
+            })
+        })
     }
     init()
 </script>

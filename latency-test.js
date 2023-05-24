@@ -10,7 +10,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 const PORT = parseInt(process.env.PORT || "3030");
 const TOKEN = process.env.TOKEN || "token";
 const DEV = process.env.NODE_ENV === "development";
-const PEER_NUM = parseInt(process.env.PEER_NUM || "4");
+const PEER_NUM = parseInt(process.env.PEER_NUM || "2");
 const CONN_EXP = parseInt(process.env.CONN_EXP || "1");
 
 /**
@@ -59,6 +59,7 @@ io.use((socket, next) => {
  * }}
  */
 let connections = {};
+var readyNum = 0
 app.get("/connections", (req, res) => {
     res.json(Object.values(connections));
 });
@@ -113,8 +114,11 @@ io.on("connection", (socket) => {
         if (Object.keys(connections).length >= PEER_NUM)
             pairRtc()
     });
-
-
+    socket.on("gun-ready", () => {
+        if (++readyNum >= PEER_NUM) {
+            io.emit("gun-exec")
+        }
+    })
 });
 
 app.use(sirv("public", { DEV }));
