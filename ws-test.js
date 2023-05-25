@@ -1,3 +1,4 @@
+
 // Import puppeteer
 const puppeteer = require('puppeteer');
 const path = require('path');
@@ -56,8 +57,8 @@ var trigger2 = {}
     browser2.newPage()
   ])
   await Promise.all([
-    page1.goto("https://web.whatsapp.com"),
-    page2.goto("https://web.whatsapp.com")
+    page1.goto("http://localhost:5005"),
+    page2.goto("http://localhost:5005")
   ])
 
   async function close() {
@@ -96,18 +97,40 @@ var trigger2 = {}
   ])
 
   await Promise.all([
-    page1.waitForSelector('[data-testid="message-yourself-row"]')
-      .then(() => page1.click('[data-testid="message-yourself-row"]')),
-    page2.waitForSelector('[data-testid="message-yourself-row"]')
-      .then(() => page2.click('[data-testid="message-yourself-row"]'))
+    (async () => {
+      var el = await page1.waitForSelector("#header .drawer-button")
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      el = await page1.waitForSelector('[data-friend-id="S2rNZvrIJpZXMghRCsLZxmZ7rrsG2qduFu0b7GMTYRo.R4bnUEzLwU5EygJs1VmfLn0vF-j9lrv7X5-OeqQja_s"]')
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      el = await page1.waitForSelector('button.cursor-pointer')
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      await new Promise(res => setTimeout(res, 500))
+      el = await page1.waitForSelector('#chat-screen input')
+      await el.click()
+    })(),
+    (async () => {
+      var el = await page2.waitForSelector("#header .drawer-button")
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      el = await page2.waitForSelector('[data-friend-id="ngC4sqSfuue5V5V9h7QPI6I226tVCXnYZdahMX5YW8Q.GUetdEbN7Pbg17VovPsUDbQ1ne0Xtl5GHZB7KNuq3O0"]')
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      el = await page2.waitForSelector('button.cursor-pointer')
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      await new Promise(res => setTimeout(res, 500))
+      el = await page2.waitForSelector('#chat-screen input')
+      await el.click()
+    })()
   ])
 
   await new Promise((res) => setTimeout(res, 500))
 
-  for (var i = 0; i <= 300; i++) {
+  for (var i = 0; i <= 500; i++) {
     await new Promise((res) => setTimeout(res, 500))
-    // let w1 = wait(page1, trigger1)
-    // let w2 = wait(page2, trigger2)
     let text = randStr(512)
     await send(page1, text)
     let t1 = +new Date()
@@ -121,8 +144,8 @@ var trigger2 = {}
  * @param { string } msg
  */
 async function send(page, msg) {
-  await page.click('[class="_3Uu1_"]')
-  await page.type('[class="_3Uu1_"]', msg);
+  await page.click('#chat-screen input')
+  await page.type('#chat-screen input', msg);
   await page.keyboard.press("Enter")
 }
 
@@ -140,7 +163,7 @@ async function wait(page, trigger) {
         observer.disconnect();
         trigger()
       });
-      const targetNode = document.querySelector('[role="application"]');
+      const targetNode = document.querySelector('#contents');
       observer.observe(targetNode, {childList: true});
     })
   }).then(() => {

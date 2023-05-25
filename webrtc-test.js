@@ -48,16 +48,16 @@ var trigger1 = {}
 var trigger2 = {}
 ;(async () => {
   const [browser1, browser2] = await Promise.all([
-    puppeteer.launch({ headless: false, userDataDir: '/tmp/myChromeSession1' }),
-    puppeteer.launch({ headless: false, userDataDir: '/tmp/myChromeSession2' })
+    puppeteer.launch({ headless: false, userDataDir: '/tmp/myChromeSession5' }),
+    puppeteer.launch({ headless: false, userDataDir: '/tmp/myChromeSession6' })
   ]);
   const [page1, page2] = await Promise.all([
     browser1.newPage(),
     browser2.newPage()
   ])
   await Promise.all([
-    page1.goto("https://web.whatsapp.com"),
-    page2.goto("https://web.whatsapp.com")
+    page1.goto("http://localhost:5005"),
+    page2.goto("http://localhost:5005")
   ])
 
   async function close() {
@@ -93,21 +93,64 @@ var trigger2 = {}
     page2.exposeFunction("trigger", () => {
       (trigger2.fn||(()=>{}))()
     }),
+    page1.exposeFunction("print", msg => {
+      console.log("page1", msg)
+    }),
+    page2.exposeFunction("print", msg => {
+      console.log("page2", msg)
+    }),
   ])
 
   await Promise.all([
-    page1.waitForSelector('[data-testid="message-yourself-row"]')
-      .then(() => page1.click('[data-testid="message-yourself-row"]')),
-    page2.waitForSelector('[data-testid="message-yourself-row"]')
-      .then(() => page2.click('[data-testid="message-yourself-row"]'))
+    (async () => {
+      var el = await page1.waitForSelector("#header .drawer-button")
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      el = await page1.waitForSelector('[data-friend-id="bK0XKzsGPa1VKXxbmEnzbrnw4iMMzSKEnK08hE6zXkQ.hndPS8TQZtd3LcrzPKw5Wa7TlX-sRZlXqGbvl3HfK4M')
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      el = await page1.waitForSelector('button.cursor-pointer')
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      await new Promise(res => setTimeout(res, 500))
+      el = await page1.waitForSelector('#chat-screen input')
+      await el.click()
+    })(),
+    (async () => {
+      var el = await page2.waitForSelector("#header .drawer-button")
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      el = await page2.waitForSelector('[data-friend-id="5juPgYjj4aOW1JQx_BP_mycZ0EhR-ezct6nB5_9Xq9I.Cwotu4UPfiw_Q15ClQwX2QqVfD7iT32TGg15OsATwo0"]')
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      el = await page2.waitForSelector('button.cursor-pointer')
+      await new Promise(res => setTimeout(res, 500))
+      await el.click()
+      await new Promise(res => setTimeout(res, 500))
+      el = await page2.waitForSelector('#chat-screen input')
+      await el.click()
+    })(),
+    page1.waitForSelector("#friendrtc.w-16"),
+    page2.waitForSelector("#friendrtc.w-16")
   ])
 
-  await new Promise((res) => setTimeout(res, 500))
+  const deleteWsPeer = () => {
+    let mesh = gun._.opt.mesh
+    let peers = gun._.opt.peers
+    let wsPeer = peers["https://test-gun.glubl.io/gun"]
+    delete peers["https://test-gun.glubl.io/gun"]
+    mesh.bye(wsPeer)
+  }
 
-  for (var i = 0; i <= 300; i++) {
+  await Promise.all([
+    page1.evaluate(deleteWsPeer),
+    page2.evaluate(deleteWsPeer)
+  ])
+
+  await new Promise((res) => setTimeout(res, 1000))
+
+  for (var i = 0; i <= 500; i++) {
     await new Promise((res) => setTimeout(res, 500))
-    // let w1 = wait(page1, trigger1)
-    // let w2 = wait(page2, trigger2)
     let text = randStr(512)
     await send(page1, text)
     let t1 = +new Date()
@@ -121,8 +164,8 @@ var trigger2 = {}
  * @param { string } msg
  */
 async function send(page, msg) {
-  await page.click('[class="_3Uu1_"]')
-  await page.type('[class="_3Uu1_"]', msg);
+  await page.click('#chat-screen input')
+  await page.type('#chat-screen input', msg);
   await page.keyboard.press("Enter")
 }
 
@@ -140,7 +183,7 @@ async function wait(page, trigger) {
         observer.disconnect();
         trigger()
       });
-      const targetNode = document.querySelector('[role="application"]');
+      const targetNode = document.querySelector('#contents');
       observer.observe(targetNode, {childList: true});
     })
   }).then(() => {
