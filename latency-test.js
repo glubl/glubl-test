@@ -12,8 +12,8 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || "3030");
 const TOKEN = process.env.TOKEN || "swololo";
 const DEV = process.env.NODE_ENV === "development";
-const PEER_NUM = parseInt(process.env.PEER_NUM || "16");
-const CONN_EXP = parseInt(process.env.CONN_EXP || "8");
+const PEER_NUM = parseInt(process.env.PEER_NUM || "2");
+const CONN_EXP = parseInt(process.env.CONN_EXP || "1");
 
 /**
  * @param {string[]} peers 

@@ -24,7 +24,7 @@ async function listenPage(page) {
   return page
 }
 
-const NUM_PEER = 16
+const NUM_PEER = 2
 
 /** @type {{fn: () => void | undefined}} */
 var trigger1 = {}
