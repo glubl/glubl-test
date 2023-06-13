@@ -96,12 +96,15 @@ var trigger2 = {}
     }),
   ])
 
+  const PUB1 = "yZC6Fo0-gmq-dlFgObyp-HyWmP0Z2yGHdKA9P72W1YU.sFx18vfooXenTkqltCVSoh4_nyWpq6ziN-yuYGxvEcI"
+  const PUB2 = "n5LhfIFlKWV8hVjol7TAm3L6KKbf_jAA8--d5YzaufI.yxyjkwUIf2S5WL0kFsuMKjwL3Cx8owqLw5-eMPiLRLQ"
+
   await Promise.all([
     (async () => {
       var el = await page1.waitForSelector("#header .drawer-button")
       await new Promise(res => setTimeout(res, 500))
       await el.click()
-      el = await page1.waitForSelector('[data-friend-id="S2rNZvrIJpZXMghRCsLZxmZ7rrsG2qduFu0b7GMTYRo.R4bnUEzLwU5EygJs1VmfLn0vF-j9lrv7X5-OeqQja_s"]')
+      el = await page1.waitForSelector(`[data-friend-id="${PUB2}"]`)
       await new Promise(res => setTimeout(res, 500))
       await el.click()
       el = await page1.waitForSelector('button.cursor-pointer')
@@ -115,7 +118,7 @@ var trigger2 = {}
       var el = await page2.waitForSelector("#header .drawer-button")
       await new Promise(res => setTimeout(res, 500))
       await el.click()
-      el = await page2.waitForSelector('[data-friend-id="ngC4sqSfuue5V5V9h7QPI6I226tVCXnYZdahMX5YW8Q.GUetdEbN7Pbg17VovPsUDbQ1ne0Xtl5GHZB7KNuq3O0"]')
+      el = await page2.waitForSelector(`[data-friend-id="${PUB1}"]`)
       await new Promise(res => setTimeout(res, 500))
       await el.click()
       el = await page2.waitForSelector('button.cursor-pointer')
@@ -127,26 +130,34 @@ var trigger2 = {}
     })()
   ])
 
+  /**
+   * 1 to 1000000
+   */
   await new Promise((res) => setTimeout(res, 500))
-
+  const BASE_N = 200
+  var n = 0
   for (var i = 0; i <= 500; i++) {
     await new Promise((res) => setTimeout(res, 500))
-    let text = randStr(512)
-    await send(page1, text)
+    n += BASE_N
+    let len = await send(page1, BASE_N)
     let t1 = +new Date()
     let t2 = await wait(page2, trigger2)
-    console.log(`${t2 - t1},${text.length}`)
+    console.log(`${t2 - t1},${len}`)
   }
 })();
 
 /**
  * @param { puppeteer.Page } page 
- * @param { string } msg
+ * @param { number } msg
  */
-async function send(page, msg) {
-  await page.click('#chat-screen input')
-  await page.type('#chat-screen input', msg);
-  await page.keyboard.press("Enter")
+async function send(page, n) {
+  let len = await page.$eval('#chat-screen input', (el, n) => {
+    window.msg = (window.msg||'') + 'a'.repeat(n)
+    el.value = window.msg
+    return window.msg.length
+  }, n);
+  await page.click('#send-msg')
+  return len
 }
 
 /**

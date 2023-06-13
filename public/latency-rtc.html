@@ -8,6 +8,8 @@
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
     <script src="./gun/gun.js"></script>
     <script src="./gun/sea.js"></script>
+    <!-- <script src="./gun/lib/yson.js"></script> -->
+    <script src="./gun/lib/then.js"></script>
     <script src="./gun/lib/radix.js"></script>
     <script src="./gun/lib/radisk.js"></script>
     <script src="./gun/lib/store.js"></script>
@@ -21,17 +23,41 @@
     
 </body>
 <script>
-    const _debugger = Debugger("html", true)
+    function randInt(max, min) {
+        if ((offset = min ??= 0) < (max ??= min + 2)) ([min, max] = [max, min]);
+        return (Math.floor(Math.random() * (max - min)) + min);
+    }
+    function uuid(l){ 
+        return Gun.state().toString(36).replace('.','') + String.random(l||12) 
+    }
+    const PREFIX = "test4"
+    _debugger = Debugger("html", true)
+    _debugger2 = Debugger("gun-in", false)
+    _debugger3 = Debugger("gun-on", false)
+    const worker = new Worker("worker.js")
     async function init(room, peer, pair) {
+        const start  = Gun.state()
         window.pair = pair ??= await SEA.pair()
-        localStorage.clear()
+        pid = uuid()
+        localStorage.removeItem(pid)
+        await new Promise(res => {
+            indexedDB.deleteDatabase(pid).onsuccess = res
+        })
     
-        gun = Gun()
+        gun = Gun({
+            peers: [],
+            file: pid,
+            localStorage: false,
+            puff: 999, // Maximum num message processed from receieved batch
+            gap: -1, // Batch based on time 
+            wait: -1, // Same with gap
+            pack: -1 // Batch based on size 
+        })
         user = gun.user()
         user.auth(pair)
         mesh = gun.back("opt.mesh")
 
-        channel = new SignalingChannel(gun.back("opt.uuid")(), "https://test.master.glubl.io/", "swololo")
+        channel = new SignalingChannel(pid, "http://localhost:3030/", "swololo")
         let p = new Promise((res) => {
             channel.socket.on("connect", function fn() {
                 channel.socket.off("connect", fn)
@@ -39,14 +65,91 @@
             })
         })
         channel.connect()
-        await p
         channel.socket.on("initRTC", initRTC)
-        channel.socket.on("gun-exec", initTest)
+        channel.socket.on("message", onMessage)
+        channel.socket.on("leave", onPeerLeave)
+        channel.socket.on("eval", async (e) => {
+            console.log(e)
+            let { id, cmd } = e
+            let res
+            try {
+                res = eval(cmd)
+                if (res instanceof Promise) {
+                    res = await res
+                }
+            } catch (error) {
+                channel.socket.emit("eval-res", {
+                    from: pid,
+                    type: "error",
+                    msg: ''+error
+                })
+            }
+            channel.socket.emit("eval-res", {
+                type: "success",
+                msg: res,
+                from: pid,
+            })
+        })
+        await p
+        channel.send({ pub: pair.pub, epub: pair.epub })
+
+        gun.get(`${PREFIX}/${channel.peerId}`).map().on(async (v, k, meta, e) => {
+            _debugger3.log(meta)
+            let t2 = +new Date
+            const { d, ts, peerId, id } = JSON.parse(v||'') || {}
+            if (!d || !ts || !peerId || peerId === pid) {
+                console.error("Invalid data", JSON.parse(v), pid)
+                return
+            }
+            
+            let { shared, pub, epub } = netPeers[peerId] 
+            let enc = await SEA.verify(d, pub)
+            let dat = await SEA.decrypt(enc, shared)
+            if (!dat) {
+                console.error("Can't decrypt data", dat, env, d, netPeers[peerId])
+                return
+            }
+            channel.sendTo(peerId, {result: {
+                lat: +new Date - ts,
+                numP: 999 - ((meta.ok??{})["@"]??999),
+                id: id
+            }})
+            // _debugger.log('Send ack', meta)
+            // gun.on('out', {
+            //     '@': ''+meta["#"],                                       
+            //     'ok': await SEA.sign(
+            //         await SEA.encrypt({
+            //             t1: ts,
+            //             t2: t2,
+            //             t3: +new Date,
+            //             numP: 999 - meta.ok["@"]
+            //         }, shared), pair)
+            // })
+        })
     }
 
+    let forceStop = false
     netPeers = {}
     rtcPeers = {}
+    async function onMessage(msg) {
+        let { from, target, payload } = msg||{}
+        if (!!payload.pub && !!payload.epub && payload.pub !== pair.pub && (payload.rep||0) < 2) {
+            channel.sendTo(from, { pub: pair.pub, epub: pair.epub, rep: (payload.rep||0)+1 })
+            peerPub = netPeers[from] ??= {}
+            peerPub.pub = payload.pub, 
+            peerPub.epub = payload.epub,
+            peerPub.shared = await SEA.secret(payload.epub, pair)
+        } 
+    }
+    async function onPeerLeave(msg) {
+        let { peerId, socketId } = msg||{}
+        if (peerId) {
+            delete netPeers[peerId]
+        }
+    }
+
     async function initRTC(peers) {
+        await new Promise(res => setTimeout(res, 5000))
         _debugger.log(peers)
         let oldPeers = new Set(Object.keys(rtcPeers))
         for (const peerId of peers) {
@@ -56,44 +159,72 @@
             let tmp
             let p = rtcPeers[peerId] ??= {}
             let gunPeer = p.rtc ??= new RTCPeer(peerId, channel.peerId)
-            
             let peerPub = undefined
             let sendFn = p.sendFn = async (msg) => {
+                peerPub = netPeers[peerId]
                 var dat = msg
-                if (!!peerPub) {
+                if (!!peerPub && peerPub.shared) {
                     let enc = await SEA.encrypt(msg, peerPub.shared)
                     dat = await SEA.sign(enc, pair)
+                } else {
+                    _debugger.log("not encrypting")
                 }
-                channel.sendTo(peerId, dat)
+                channel.sendTo(peerId, {signal: dat})
             }
             let recvFn = p.recvFn = async (msg) => {
+                peerPub = netPeers[peerId]
                 let { target, from, payload } = msg||{}
-                if (target !== channel.peerId || from !== peerId) return
+                let { signal, pub, epub } = payload||{}
+                if (target !== channel.peerId || from !== peerId || !(pub || epub || signal)) {
+                    // _debugger.log("no target")
+                    return
+                }
+                
+                // console.log(msg, peerPub)
+                if (pub && epub) {
+                    sendFn({ pub: pair.pub, epub: pair.epub })
+                    peerPub = netPeers[peerId] = {
+                        pub: pub,
+                        epub: epub,
+                        shared: await SEA.secret(epub, pair)
+                    }
+                    _debugger.log("recv pub epub")
+                } 
+                if (peerPub && typeof signal === 'string' && signal.startsWith("SEA")) {
+                    let enc = await SEA.verify(payload.signal, peerPub.pub)
+                    signal = await SEA.decrypt(enc, peerPub.shared)
+                }
+                
                 if (!peerPub) {
-                    if (!!payload.pub && !!payload.epub) {
-                        sendFn({ pub: pair.pub, epub: pair.epub })
-                        peerPub = netPeers[peerId] = { 
-                            pub: payload.pub, 
-                            epub: payload.epub,
-                            shared: await SEA.secret(payload.epub, pair)
-                        }
-                        gunPeer.connect()
-                    } 
+                    _debugger.log("no pub epub")
                     return
                 }
-                if (typeof payload !== "string") return
-                let enc = await SEA.verify(payload, peerPub.pub)
-                let dat = await SEA.decrypt(enc, peerPub.shared)
-                if (!dat) {
-                    _debugger.warn("No data!")
-                    return
+                // if (!payload.signal || typeof payload.signal !== 'string' || !payload.signal.startsWith("SEA")) {
+                //     _debugger.log("unknown data")
+                //     return
+                // }
+                
+                // if (!signal) {
+                //     _debugger.warn("No data!")
+                //     return
+                // }
+                if (!p.isConnect) {
+                    p.connArr ??= []
+                    p.connArr.push(signal)
+                } else if (p.connArr && p.connArr.length > 0) {
+                    let pp = p.connArr
+                    p.connArr = undefined
+                    for (const pppp of pp) {
+                        gunPeer.emit("recv-signal", pppp)
+                    }
                 }
-                gunPeer.emit("recv-signal", dat)
+                gunPeer.emit("recv-signal", signal)
             }
             
             channel.socket.on("message", recvFn)
             gunPeer.on("send-signal", sendFn)
-            sendFn({ pub: pair.pub, epub: pair.epub })
+            // sendFn({ pub: pair.pub, epub: pair.epub })
+            
             
             function close() {
                 _debugger.log("{{data channel}} close", this.label)
@@ -110,13 +241,17 @@
                 gunPeer.wire = this
                 gunPeer.id = peerId
                 channel.socket.emit("gun-ready", {})
+                console.log("RTC connected:", peerId)
                 mesh.hi(gunPeer)
+                console.log(Object.keys(gun.back("opt.peers")).length)
             }
             function message(msg) {
                 if (!msg.data) return
-                //_debugger.log("::msg::", msg.data)
+                _debugger2.log("::msg::", msg.data)
                 mesh.hear(msg.data, gunPeer)
             }
+            gunPeer.connect()
+            p.isConnect = true
             rtcPeers[peerId].rtc.addDataChannel('gun', message, open, close, error)
         }
         for (peerId of oldPeers) {
@@ -127,47 +262,91 @@
         }
     }
 
-    async function initTest() {
-        gun.get("profiles").get(channel.peerId).put({
-            pub: pair.pub,
-            epub: pair.epub
+    async function send(peerId, msg) {
+        var res, prom = new Promise(r => res = r)
+        msg ??= 'a'.repeat(1024)
+        if (!peerId || !(peerId in netPeers)) {
+            let peers = Object.keys(netPeers)
+            var idx = randInt(peers.length)
+            peerId = peers[idx]
+        }
+        // console.log(peerId)
+        let p = netPeers[peerId]
+        let ts = +new Date
+        let uid = uuid(16)
+        gun.get(`${PREFIX}/${peerId}`) 
+            .get(`${Gun.state()}|${uuid()}`)
+            .put(JSON.stringify({
+                ts: ts,
+                id: uid,
+                d: await encryptChat(pair, p.shared, msg),
+                peerId: pid
+            }), async (ack) => {
+                // const {err, ok} = ack
+                // let t4 = +new Date
+                // if (!!err || !ok || typeof ok !== 'string' || !ok.startsWith("SEA")) {
+                //     _debugger.log("No data", err)
+                //     return
+                // }
+                // let { t1, t2, t3, numP } = await SEA.decrypt(await SEA.verify(ok, p.pub), p.shared)
+                // console.log(ack)
+                // res({
+                //     ntp: { t1, t2, t3, t4 },
+                //     roundTrip: (t4 - t1) - (t3 - t2),
+                //     offset: ((t2 - t1) + (t3 - t4)) / 2,
+                //     indirect: numP
+                // })
+            }, {acks: 999})
+        channel.socket.on("message", function resFn(dat) {
+            // console.log(dat)
+            const { from, to, payload } = dat||{}
+            if (from !== peerId || !payload || !payload.result) {
+                // console.log("1", from, peerId, payload)
+                return
+            }
+            const { lat, numP, id } = payload.result
+            if ( lat === undefined || numP === undefined || !id || id !== uid) {
+                // console.log(lat, numP, id, uid)
+                return
+            }
+            // console.log("ACC")
+            channel.socket.off("message", resFn)
+            res({ lat, numP })
         })
-        gun.get("test").get(channel.peerId).map().on(async (v, k, meta, e) => {
-            let t2 = +new Date
-            console.log("Recv")
-            const { d, ts, pub, epub, peerId } = JSON.parse(v||'') || {}
-            if (!d || !ts || !pub || !epub || !peerId) {
-                console.error("Invalid data", v)
-                return
+        return prom
+    } 
+
+    ress = new Map()
+    async function intervalSend(interval, nMsg) {
+        nMsg ??= 500
+        interval ??= 500
+        let arr = []
+        var n = 0
+        return new Promise(res => {
+            worker.onmessage = async () => {
+                if (n++ >= nMsg) {
+                    return
+                }
+                let v = await send()
+                arr.push(v)
+                console.log(v.lat, v.numP, nMsg - arr.length)
+                if (arr.length >= nMsg) {
+                    ress.set([nMsg, interval].join("-"), arr)
+                    worker.postMessage({type: 'stop'})
+                    worker.onmessage = undefined
+                    res(arr.reduce((t, v) => t+"\n"+`${v.lat},${v.numP},500,10` , '').trim("\n"))
+                }
             }
-            if (pub === pair.pub) return
-            
-            let { shared } = netPeers[peerId] ??= {
-                pub: pub,
-                epub: epub,
-                shared: await SEA.secret(epub, pair)
-            }
-            let enc = await SEA.verify(d, pub)
-            let dat = await SEA.decrypt(enc, shared)
-            if (!dat) {
-                console.error("Can't decrypt data", dat, env, d, netPeers[peerId])
-                return
-            }
-            
-            console.log('Send ack')
-            // TODO
-            gun.on('out', {
-                '@': ''+meta["#"],                                       
-                'ok': await SEA.sign(
-                    await SEA.encrypt({
-                        t1: ts,
-                        t2: t2,
-                        t3: +new Date
-                    }, shared)
-                )
-            })
+            worker.postMessage({type: 'start', interval: interval})
         })
     }
+
+    function numPeers() { return Object.keys(gun._.opt.peers).length }
+
+    // async function sendMsg(peerId) {
+    //     let pid = peerId ? 
+    // }
+
     init()
 </script>
 </html>

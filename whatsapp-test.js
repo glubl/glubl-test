@@ -102,28 +102,47 @@ var trigger2 = {}
       .then(() => page2.click('[data-testid="message-yourself-row"]'))
   ])
 
+  /**
+   * 100 to 100_000
+   */
   await new Promise((res) => setTimeout(res, 500))
-
-  for (var i = 0; i <= 300; i++) {
+  const BASE_N = 200
+  var n = 0
+  for (var i = 0; i <= 500; i++) {
     await new Promise((res) => setTimeout(res, 500))
-    // let w1 = wait(page1, trigger1)
-    // let w2 = wait(page2, trigger2)
-    let text = randStr(512)
-    await send(page1, text)
+    n += BASE_N
+    let len = await send(page1, BASE_N)
     let t1 = +new Date()
     let t2 = await wait(page2, trigger2)
-    console.log(`${t2 - t1},${text.length}`)
+    console.log(`${t2 - t1},${len}`)
   }
 })();
 
 /**
  * @param { puppeteer.Page } page 
- * @param { string } msg
+ * @param { number } n
  */
-async function send(page, msg) {
+async function send(page, n) {
+  var len = await page.$eval(`#main div[contenteditable="true"]`, (el, n) => {
+    window.msg = (window.msg||'') + 'a'.repeat(n)
+    window.dt = window.dt ??= new DataTransfer();
+    window.dt.setData('text/plain', window.msg);
+    el.focus()
+    el.dispatchEvent(
+      new ClipboardEvent('paste', {
+        clipboardData: window.dt,
+  
+        // need these for the event to reach Draft paste handler
+        bubbles: true,
+        cancelable: true
+      })
+    );
+    window.dt.clearData();
+    return window.msg.length
+  }, n)
   await page.click('[class="_3Uu1_"]')
-  await page.type('[class="_3Uu1_"]', msg);
   await page.keyboard.press("Enter")
+  return len
 }
 
 /**

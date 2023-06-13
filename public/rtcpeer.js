@@ -1,4 +1,4 @@
-
+const DEBUG = true
 const ee = import("./events.js").then(({ EventEmitter }) => {
     class RTCPeer extends EventEmitter {
         pc;
@@ -14,6 +14,7 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
         maxRetry;
         maxWait;
         minWait;
+        manualDc = false;
         pendingICECandidate = [];
         RTCPeerConnection;
         RTCSessionDescription;
@@ -24,7 +25,6 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
         mediaStreams = {};
         tracksRtpSenders = {};
         dataChannels = {};
-        manualDc = false;
         constructor(id, myId, opt) {
             super();
             let env = {};
@@ -49,17 +49,17 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
                 maxRetransmits: 3
             };
             this.initOffer = opt?.offer || {
-                iceRestart: false,
+                iceRestart: true,
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true
             };
             this.polite = [id, myId].sort()[0] === id;
             this.wait = opt?.startWait || opt?.minWait || 15 * 1e3;
-            this.retry = opt?.maxRetry || 8;
+            this.retry = opt?.maxRetry || 1008;
             this.waitInc = opt?.waitInc || 2;
-            this.maxWait = opt?.maxWait || 30 * 1e3;
+            this.maxWait = opt?.maxWait || 11 * 1e3;
             this.minWait = opt?.minWait || 10 * 1e3;
-            this.maxRetry = opt?.maxRetry || 8;
+            this.maxRetry = opt?.maxRetry || 100;
             this.id = id;
             this.myId = myId;
             this.on("recv-signal", (msg) => {
@@ -69,20 +69,19 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
         async connect() {
             if (this.retry <= 0 || this.manualDc)
                 return;
-            this._debugger.log("((reconnect))", this.retry, this.wait);
+            _debugger.log("((reconnect))", this.retry, this.wait);
             this.disconnect("bye");
-            this.manualDc = false
+            this.manualDc = false;
             this.emit("send-signal", { hi: this.myId, ts: +/* @__PURE__ */ new Date() });
-            this._debugger.log("::hi send::");
+            _debugger.log("::hi send::");
             clearTimeout(this.defer);
             this.defer = setTimeout(() => this.connect(), this.wait);
             this.retry = this.retry - (-this.lastTried + (this.lastTried = +/* @__PURE__ */ new Date()) < this.wait * this.waitInc ? 1 : 0);
             this.wait = Math.min(this.wait * this.waitInc, this.maxWait);
         }
-        
         disconnect(reason) {
             this.clearReconnect();
-            this._debugger.log("::close::", reason);
+            _debugger.log("::close::");
             if (this.pc) {
                 for (const channelId in this.dataChannels) {
                     this.disconnectDataChannel(channelId);
@@ -96,22 +95,21 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
             this.setConnected(false);
             this.hiReceive = false;
             if (reason !== "clear") {
-                this.manualDc = true
+                this.manualDc = true;
             }
             if (reason !== "bye" && reason !== "clear") {
-                this._debugger.log("::bye send::");
+                _debugger.log("::bye send::");
                 this.emit("send-signal", { ts: +/* @__PURE__ */ new Date(), bye: "bye" });
             }
         }
         addStream(stream) {
             if (this.mediaStreams[stream.id])
                 return;
-            this._debugger.log("{{stream}} add", stream.id, stream.getTracks());
+            _debugger.log("{{stream}} add", stream.id, stream.getTracks());
             this.mediaStreams[stream.id] = stream;
             for (const track of stream.getTracks()) {
                 if (this.pc) {
                     this.tracksRtpSenders[track.id] = this.pc.addTrack(track, stream);
-                    console.log(this.tracksRtpSenders[track.id]);
                 }
             }
         }
@@ -122,7 +120,7 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
         disconnectStream(stream) {
             if (!this.mediaStreams[stream.id])
                 return;
-            this._debugger.log("{{stream}} disconnect", stream.id);
+            _debugger.log("{{stream}} disconnect", stream.id);
             for (const track of stream.getTracks()) {
                 if (this.pc)
                     this.pc.removeTrack(this.tracksRtpSenders[track.id]);
@@ -132,26 +130,35 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
         makingOffer = false;
         polite;
         hiReceive = false;
+        hiDefer = undefined;
         async receive(msg) {
             try {
-                if (!msg)
-                    return;
+                if (!msg) {
+                    _debugger.log("::no msg::");
+                    return
+                }
+
+                _debugger.log("::=======msg=======::", msg);
+                    
                 let { candidate, description, bye, hi } = msg;
                 if (bye && (this.isConnected || +/* @__PURE__ */ new Date() - this.lastTried > this.wait * this.waitInc)) {
-                    this._debugger.log("::bye::");
-                    this.manualDc = true
+                    _debugger.log("::bye::");
+                    this.manualDc = true;
                     this.disconnect("bye");
                     return;
                 }
                 if (hi && !this.hiReceive) {
-                    this._debugger.log("::hi::");
+                    _debugger.log("::hi::");
                     this.hiReceive = true;
                     this.emit("send-signal", { hi: this.myId, ts: +/* @__PURE__ */ new Date() });
-                    this._debugger.log("::hi send::");
+                    _debugger.log("::hi send::");
                     await this.sendOffer();
+                    clearTimeout(this.hiDefer)
+                    this.hiDefer = setTimeout(() => this.hiReceive = false, 15000)
                     return;
                 }
                 if (!this.pc) {
+                    _debugger.log("::no pc::");
                     return;
                 }
                 let pc = this.pc;
@@ -159,85 +166,86 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
                     const offerCollision = description.type == "offer" && (this.makingOffer || pc.signalingState != "stable");
                     let ignoreOffer = !this.polite && offerCollision;
                     if (ignoreOffer) {
-                        this._debugger.log("::offer:: ignore");
+                        _debugger.log("::offer:: ignore");
                         return;
                     }
                     if (offerCollision) {
-                        this._debugger.log("::offer:: rollback");
+                        _debugger.log("::offer:: rollback");
                         await Promise.all([
                             pc.setLocalDescription({ type: "rollback" }),
                             pc.setRemoteDescription(description)
                         ]);
                     } else {
-                        this._debugger.log(`::${description.type}:: accept`);
+                        _debugger.log(`::${description.type}:: accept`);
                         await pc.setRemoteDescription(description);
                     }
                     if (description.type == "offer") {
                         let answer = await pc.createAnswer(this.initOffer);
                         await pc.setLocalDescription(answer);
-                        this._debugger.log("::answer:: send");
+                        _debugger.log("::answer:: send");
                         this.emit("send-signal", {
                             description: answer,
                             ts: +/* @__PURE__ */ new Date()
                         });
                     }
                     if (pc.remoteDescription) {
-                        this._debugger.log("{{ice apply cache}}");
-                        for (let candidate2 of this.pendingICECandidate) {
-                            await pc.addIceCandidate(candidate2);
-                        }
+                        _debugger.log("{{ice apply cache}}");
+                        await pc.addIceCandidate(this.pendingICECandidate[this.pendingICECandidate.length]);
                         this.pendingICECandidate = [];
                     }
                     return;
                 }
                 if (candidate) {
                     if (!pc.remoteDescription) {
-                        this._debugger.log("::ice:: cache");
+                        _debugger.log("::ice:: cache");
                         (this.pendingICECandidate ??= []).push(candidate);
                         return;
                     }
-                    this._debugger.log("::ice::");
+                    _debugger.log("::ice::");
                     await pc.addIceCandidate(candidate);
                     return;
                 }
+
+                _debugger.log("::not catched!::", msg);
             } catch (e) {
                 if (e.name === "InvalidStateError")
                     return;
-                this._debugger.error("::receive::", e);
+                _debugger.error("::receive::", e);
             }
         }
         async sendOffer() {
             if (!this.pc)
                 this.createPeer();
             let pc = this.pc;
+            var offer;
             try {
                 this.makingOffer = true;
-                let offer = await pc.createOffer(this.initOffer);
+                offer = await pc.createOffer(this.initOffer);
                 if (pc.signalingState != "stable") {
-                    this._debugger.log("::offer:: send cancel");
+                    _debugger.log("::offer:: send cancel");
                     return;
                 }
                 ;
                 await pc.setLocalDescription(offer);
-                this._debugger.log("::offer:: send");
+                _debugger.log("::offer:: send");
                 this.emit("send-signal", {
                     description: offer,
                     ts: +/* @__PURE__ */ new Date()
                 });
             } catch (e) {
-                this._debugger.error("::offer:: send", e);
+                _debugger.error("::offer:: send", e);
             } finally {
                 this.makingOffer = false;
             }
         }
         resetReconnect(restart) {
-            this._debugger.log("{{reconnect}} reset");
+            _debugger.log("{{reconnect}} reset");
             this.clearReconnect();
             this.wait = restart ? this.minWait : this.maxWait;
             this.defer = setTimeout(() => this.connect(), this.wait);
         }
         clearReconnect(restart) {
-            this._debugger.log("{{reconnect}} clear");
+            _debugger.log("{{reconnect}} clear");
             clearTimeout(this.defer);
             this.retry = restart ? this.maxRetry || 8 : this.retry;
         }
@@ -254,14 +262,15 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
                 this.emit("disconnected");
         }
         createPeer() {
-            this._debugger.log("{{create peer}}");
+            _debugger.log("{{create peer}}");
             if (this.pc)
                 this.disconnect("clear");
             let pc = this.pc = new this.RTCPeerConnection(this.initPeerConnection);
             const ins = this;
             function onOpen() {
+                pc.addEventListener("negotiationneeded", (e) => ins.sendOffer());
                 ins.clearReconnect();
-                ins._debugger.log("::ping:: send");
+                _debugger.log("::ping:: send");
                 this.send("ping");
             }
             let closeCalled = false;
@@ -274,7 +283,7 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
                 if (!ins.manualDc) {
                     ins.resetReconnect(true);
                 } else {
-                    console.log("manual dc")
+                    _debugger.log("<<manual dc>>");
                 }
             }
             function onError() {
@@ -282,17 +291,17 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
                 if (!ins.manualDc) {
                     ins.resetReconnect(true);
                 } else {
-                    console.log("manual dc")
+                    _debugger.log("<<manual dc>>");
                 }
             }
             function onMessage(ev) {
                 if (ev.data === "pong") {
-                    ins._debugger.log("::pong:: recv");
+                    _debugger.log("::pong:: recv");
                     ins.clearReconnect(true);
                     ins.setConnected(true);
                 } else if (ev.data === "ping") {
-                    ins._debugger.log("::ping:: recv");
-                    ins._debugger.log("::pong:: send");
+                    _debugger.log("::ping:: recv");
+                    _debugger.log("::pong:: send");
                     this.send("pong");
                 }
                 if (!ins.isConnected)
@@ -301,14 +310,14 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
             pc.addEventListener("icecandidate", (e) => {
                 if (!e.candidate)
                     return;
-                this._debugger.log("::ice:: send");
+                _debugger.log("::ice:: send");
                 this.emit("send-signal", {
                     candidate: e.candidate,
                     ts: +/* @__PURE__ */ new Date()
                 });
             });
             pc.addEventListener("datachannel", (e) => {
-                this._debugger.log("{{data channel}} in", e.channel.label);
+                _debugger.log("{{data channel}} in", e.channel.label);
                 let dc = e.channel;
                 let ch;
                 const { onmessage, onopen, onerror, onclose, onbufferedamountlow } = ch = this.dataChannels[dc.label] || {};
@@ -329,18 +338,18 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
                 }
             });
             pc.addEventListener("signalingstatechange", (e) => {
-                this._debugger.log("{{signaling state}} ", pc.signalingState);
+                _debugger.log("{{signaling state}} ", pc.signalingState);
             });
             pc.addEventListener("connectionstatechange", (e) => {
-                this._debugger.log("{{connection state}} ", pc.connectionState);
+                _debugger.log("{{connection state}} ", pc.connectionState);
             });
             pc.addEventListener("iceconnectionstatechange", (e) => {
-                this._debugger.log("{{ice connection state}} ", pc.iceConnectionState);
+                _debugger.log("{{ice connection state}} ", pc.iceConnectionState);
             });
             pc.addEventListener("track", (e) => {
                 const { track, streams } = e;
                 let str = [...streams];
-                this._debugger.log("{{track}} ", e);
+                _debugger.log("{{track}} ", e);
                 if (str.length === 0)
                     str = [new MediaStream([track])];
                 for (const s of str) {
@@ -352,7 +361,6 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
                     }
                 });
             });
-            pc.addEventListener("negotiationneeded", (e) => this.sendOffer());
             this.addDataChannel("init", onMessage, onOpen, onClose, onError);
             for (const stream of Object.values(this.mediaStreams)) {
                 for (const track of stream.getTracks()) {
@@ -380,7 +388,7 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
         createDataChannel(ch) {
             if (!this.pc)
                 return;
-            this._debugger.log("{{data-channel}} create", ch.name);
+            _debugger.log("{{data-channel}} create", ch.name);
             if (ch.channel)
                 try {
                     ch.channel.close();
@@ -420,7 +428,7 @@ const ee = import("./events.js").then(({ EventEmitter }) => {
             return dc;
         }
         removeDataChannel(name) {
-            this._debugger.log("{{data-channel}} delete", name);
+            _debugger.log("{{data-channel}} delete", name);
             this.disconnectDataChannel(name);
             delete this.dataChannels[name];
         }

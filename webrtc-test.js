@@ -48,8 +48,8 @@ var trigger1 = {}
 var trigger2 = {}
 ;(async () => {
   const [browser1, browser2] = await Promise.all([
-    puppeteer.launch({ headless: false, userDataDir: '/tmp/myChromeSession5' }),
-    puppeteer.launch({ headless: false, userDataDir: '/tmp/myChromeSession6' })
+    puppeteer.launch({ headless: false, userDataDir: '/tmp/myChromeSession1' }),
+    puppeteer.launch({ headless: false, userDataDir: '/tmp/myChromeSession2' })
   ]);
   const [page1, page2] = await Promise.all([
     browser1.newPage(),
@@ -101,12 +101,15 @@ var trigger2 = {}
     }),
   ])
 
+  const PUB1 = "yZC6Fo0-gmq-dlFgObyp-HyWmP0Z2yGHdKA9P72W1YU.sFx18vfooXenTkqltCVSoh4_nyWpq6ziN-yuYGxvEcI"
+  const PUB2 = "n5LhfIFlKWV8hVjol7TAm3L6KKbf_jAA8--d5YzaufI.yxyjkwUIf2S5WL0kFsuMKjwL3Cx8owqLw5-eMPiLRLQ"
+
   await Promise.all([
     (async () => {
       var el = await page1.waitForSelector("#header .drawer-button")
       await new Promise(res => setTimeout(res, 500))
       await el.click()
-      el = await page1.waitForSelector('[data-friend-id="bK0XKzsGPa1VKXxbmEnzbrnw4iMMzSKEnK08hE6zXkQ.hndPS8TQZtd3LcrzPKw5Wa7TlX-sRZlXqGbvl3HfK4M')
+      el = await page1.waitForSelector(`[data-friend-id="${PUB2}"]`)
       await new Promise(res => setTimeout(res, 500))
       await el.click()
       el = await page1.waitForSelector('button.cursor-pointer')
@@ -120,7 +123,7 @@ var trigger2 = {}
       var el = await page2.waitForSelector("#header .drawer-button")
       await new Promise(res => setTimeout(res, 500))
       await el.click()
-      el = await page2.waitForSelector('[data-friend-id="5juPgYjj4aOW1JQx_BP_mycZ0EhR-ezct6nB5_9Xq9I.Cwotu4UPfiw_Q15ClQwX2QqVfD7iT32TGg15OsATwo0"]')
+      el = await page2.waitForSelector(`[data-friend-id="${PUB1}"]`)
       await new Promise(res => setTimeout(res, 500))
       await el.click()
       el = await page2.waitForSelector('button.cursor-pointer')
@@ -137,8 +140,8 @@ var trigger2 = {}
   const deleteWsPeer = () => {
     let mesh = gun._.opt.mesh
     let peers = gun._.opt.peers
-    let wsPeer = peers["https://test-gun.glubl.io/gun"]
-    delete peers["https://test-gun.glubl.io/gun"]
+    let wsPeer = peers["https://gun-t.dirtboll.com/gun"]
+    delete peers["https://gun-t.dirtboll.com/gun"]
     mesh.bye(wsPeer)
   }
 
@@ -149,24 +152,34 @@ var trigger2 = {}
 
   await new Promise((res) => setTimeout(res, 1000))
 
+  /**
+   * 1 to 1000000
+   */
+  await new Promise((res) => setTimeout(res, 500))
+  const BASE_N = 200
+  var n = 0
   for (var i = 0; i <= 500; i++) {
     await new Promise((res) => setTimeout(res, 500))
-    let text = randStr(512)
-    await send(page1, text)
+    n += BASE_N
+    let len = await send(page1, BASE_N)
     let t1 = +new Date()
     let t2 = await wait(page2, trigger2)
-    console.log(`${t2 - t1},${text.length}`)
+    console.log(`${t2 - t1},${len}`)
   }
 })();
 
 /**
  * @param { puppeteer.Page } page 
- * @param { string } msg
+ * @param { number } msg
  */
-async function send(page, msg) {
-  await page.click('#chat-screen input')
-  await page.type('#chat-screen input', msg);
-  await page.keyboard.press("Enter")
+async function send(page, n) {
+  let len = await page.$eval('#chat-screen input', (el, n) => {
+    window.msg = (window.msg||'') + 'a'.repeat(n)
+    el.value = window.msg
+    return window.msg.length
+  }, n);
+  await page.click('#send-msg')
+  return len
 }
 
 /**

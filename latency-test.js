@@ -4,14 +4,16 @@ const express = require("express");
 const socketio = require("socket.io");
 const cors = require("cors");
 const sirv = require("sirv")
+const readline = require("readline")
+const fs = require('fs/promises');
 
 // ENVIRONMENT VARIABLES
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || "3030");
-const TOKEN = process.env.TOKEN || "token";
+const TOKEN = process.env.TOKEN || "swololo";
 const DEV = process.env.NODE_ENV === "development";
-const PEER_NUM = parseInt(process.env.PEER_NUM || "2");
-const CONN_EXP = parseInt(process.env.CONN_EXP || "1");
+const PEER_NUM = parseInt(process.env.PEER_NUM || "16");
+const CONN_EXP = parseInt(process.env.CONN_EXP || "2");
 
 /**
  * @param {string[]} peers 
@@ -59,6 +61,7 @@ io.use((socket, next) => {
  * }}
  */
 let connections = {};
+let evalCbs = {}
 var readyNum = 0
 app.get("/connections", (req, res) => {
     res.json(Object.values(connections));
@@ -107,6 +110,7 @@ io.on("connection", (socket) => {
         const disconnectingPeer = Object.values(connections).find((peer) => peer.socketId === socket.id);
         if (disconnectingPeer) {
             console.log("Disconnected", socket.id, "with peerId", disconnectingPeer.peerId);
+            socket.broadcast.emit("leave", { peerId: disconnectingPeer.peerId, socketId: disconnectingPeer.socketId })
             delete connections[disconnectingPeer.peerId];
         } else {
             console.log(socket.id, "has disconnected");
@@ -116,10 +120,80 @@ io.on("connection", (socket) => {
     });
     socket.on("gun-ready", () => {
         if (++readyNum >= PEER_NUM) {
-            io.emit("gun-exec")
+            io.emit("gun-start")
         }
     })
+    socket.on("eval-res", (...args) => {
+        Object.entries(evalCbs).forEach(([k, v]) => {
+            setImmediate(() => v(...args))
+            
+        })
+    })
 });
+
+function close() {
+
+}
+
+var ress = {}
+
+rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+rl.on('line', async (line) => {
+let cmds = line.split(" ")
+switch (cmds[0]) {
+    case "close":
+        await close()
+    break;
+    case "start":
+        io.emit("test-start")
+    case "eval":
+        if (!cmds[1] || !cmds[2]) {
+            console.error("Invalid command")
+        }
+        let waitN = Object.keys(connections).length
+        let id = (+new Date).toString(32)
+        evalCbs[id] = async (res) => {
+            let { type, msg, from } = res
+            
+            if (type === "error") {
+                console.log(`Eval error (${from}): ${msg}`)
+            } else {
+                try {
+                    
+                    if (cmds[1] === 'print')
+                        console.log(`Eval result from ${from}: ${msg}`)
+                    else {
+                        console.log(`Eval result from ${from}`)
+                        ress[`./${cmds[1]}-${id}-${from}.txt`] = typeof msg !== 'string' ? JSON.stringify(msg) : msg
+                    }
+                } catch (error) {
+                    console.error(error)
+                }
+            }
+            if (--waitN <= 0) {
+                delete evalCbs[id]
+            }
+        }
+        io.emit("eval", {
+            id: id,
+            cmd: cmds.slice(2).join(" ")
+        })
+        
+        break;
+    case 'write':
+        await Promise.all(Object.entries(ress).map(([n, c]) => fs.writeFile(n, c).then(() => console.log("Written", n))))
+        ress = {}
+        break;
+    default:
+        console.log("Unknown command")
+    break;
+}
+})
+.on('close', close)
+.setPrompt('> ')
 
 app.use(sirv("public", { DEV }));
 server.listen(PORT, HOST, undefined, () => console.log(`Listening on ${HOST}:${PORT}`));
