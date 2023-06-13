@@ -13,7 +13,7 @@ const PORT = parseInt(process.env.PORT || "3030");
 const TOKEN = process.env.TOKEN || "swololo";
 const DEV = process.env.NODE_ENV === "development";
 const PEER_NUM = parseInt(process.env.PEER_NUM || "16");
-const CONN_EXP = parseInt(process.env.CONN_EXP || "2");
+const CONN_EXP = parseInt(process.env.CONN_EXP || "8");
 
 /**
  * @param {string[]} peers 
