@@ -10,7 +10,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 const PORT = parseInt(process.env.PORT || "3030");
 const TOKEN = process.env.TOKEN || "token";
 const DEV = process.env.NODE_ENV === "development";
-const PEER_NUM = parseInt(process.env.PEER_NUM || "2");
+const PEER_NUM = parseInt(process.env.PEER_NUM || "4");
 const CONN_EXP = parseInt(process.env.CONN_EXP || "1");
 
 /**

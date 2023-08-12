@@ -31,7 +31,7 @@
         user.auth(pair)
         mesh = gun.back("opt.mesh")
 
-        channel = new SignalingChannel(gun.back("opt.uuid")(), "https://test.master.glubl.io/", "swololo")
+        channel = new SignalingChannel(gun.back("opt.uuid")(), "http://localhost:3030/", "swololo")
         let p = new Promise((res) => {
             channel.socket.on("connect", function fn() {
                 channel.socket.off("connect", fn)
@@ -114,7 +114,7 @@
             }
             function message(msg) {
                 if (!msg.data) return
-                //_debugger.log("::msg::", msg.data)
+                _debugger.log("::msg::", msg.data)
                 mesh.hear(msg.data, gunPeer)
             }
             rtcPeers[peerId].rtc.addDataChannel('gun', message, open, close, error)
